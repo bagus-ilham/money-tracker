@@ -1,69 +1,94 @@
-import Image from "next/image";
+import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, Wallet } from 'lucide-react';
+import Link from 'next/link';
+// import { supabase } from '@/lib/supabase'; // We will use this when ready
+
+// Mock data for UI development
+const mockData = {
+  totalBalance: 12500000,
+  suamiCash: 8000000,
+  istriCash: 4500000,
+  recentTransactions: [
+    { id: '1', type: 'expense', amount: 150000, holder: 'istri', category: 'Belanja Dapur', date: 'Hari ini', description: 'Sayur & Buah' },
+    { id: '2', type: 'transfer', amount: 2000000, holder: 'istri', from_holder: 'suami', date: 'Kemarin', description: 'Uang Bulanan' },
+    { id: '3', type: 'income', amount: 15000000, holder: 'suami', category: 'Gaji', date: '1 Agustus', description: 'Gaji Juli' },
+  ]
+};
 
 export default function Home() {
+  const formatIDR = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen p-5 pt-8">
+      {/* Header */}
+      <header className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-sm text-text-muted font-medium mb-1">Total Rumah Tangga</h1>
+          <div className="text-3xl font-bold text-gradient tracking-tight">
+            {formatIDR(mockData.totalBalance)}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="bg-surface-light p-2.5 rounded-full border border-white/10">
+          <Wallet className="w-6 h-6 text-primary" />
         </div>
-      </main>
-    </div>
+      </header>
+
+      {/* Cash per Holder Cards */}
+      <section className="grid grid-cols-2 gap-4 mb-8">
+        <div className="glass-panel p-4 rounded-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+          <h2 className="text-xs text-text-muted font-medium mb-2 relative z-10">Cash Suami</h2>
+          <p className="text-lg font-bold text-white relative z-10">{formatIDR(mockData.suamiCash)}</p>
+        </div>
+        <div className="glass-panel p-4 rounded-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-pink-500/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
+          <h2 className="text-xs text-text-muted font-medium mb-2 relative z-10">Cash Istri</h2>
+          <p className="text-lg font-bold text-white relative z-10">{formatIDR(mockData.istriCash)}</p>
+        </div>
+      </section>
+
+      {/* Recent Transactions */}
+      <section>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Transaksi Terbaru</h2>
+          <Link href="/history" className="text-xs text-primary font-medium">Lihat Semua</Link>
+        </div>
+        
+        <div className="space-y-3">
+          {mockData.recentTransactions.map((trx) => (
+            <div key={trx.id} className="flex items-center justify-between p-3.5 rounded-2xl bg-surface border border-white/5 active:bg-surface-light transition-colors">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-full ${
+                  trx.type === 'income' ? 'bg-income/20 text-income' :
+                  trx.type === 'expense' ? 'bg-expense/20 text-expense' :
+                  'bg-transfer/20 text-transfer'
+                }`}>
+                  {trx.type === 'income' ? <ArrowDownRight size={18} strokeWidth={2.5} /> :
+                   trx.type === 'expense' ? <ArrowUpRight size={18} strokeWidth={2.5} /> :
+                   <ArrowRightLeft size={18} strokeWidth={2.5} />}
+                </div>
+                <div>
+                  <p className="font-semibold text-sm">{trx.category || 'Transfer'}</p>
+                  <p className="text-xs text-text-muted mt-0.5">{trx.description || 'Tidak ada catatan'}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className={`font-bold text-sm ${
+                  trx.type === 'income' ? 'text-income' :
+                  trx.type === 'expense' ? 'text-foreground' : 'text-transfer'
+                }`}>
+                  {trx.type === 'income' ? '+' : trx.type === 'expense' ? '-' : ''}
+                  {formatIDR(trx.amount)}
+                </p>
+                <p className="text-[10px] text-text-muted mt-1 uppercase tracking-wider font-medium">
+                  {trx.type === 'transfer' ? `${trx.from_holder} → ${trx.holder}` : trx.holder}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
   );
 }
