@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, Github, Globe } from 'lucide-react';
+import { ArrowLeft, Globe } from 'lucide-react';
 
 export default function About() {
   return (
@@ -33,9 +33,6 @@ export default function About() {
       </div>
 
       <div className="flex gap-4">
-        <button className="p-3 bg-surface border border-white/5 rounded-full hover:bg-surface-light transition-colors">
-          <Github size={20} />
-        </button>
         <button className="p-3 bg-surface border border-white/5 rounded-full hover:bg-surface-light transition-colors">
           <Globe size={20} />
         </button>
