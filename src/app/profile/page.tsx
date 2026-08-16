@@ -1,6 +1,8 @@
 import { Settings, RefreshCw, LogOut, Info, Link as LinkIcon, Database } from 'lucide-react';
 import Link from 'next/link';
 
+import InstallButton from '@/components/InstallButton';
+
 export default function Profile() {
   return (
     <main className="min-h-screen p-5 pt-8">
@@ -28,6 +30,8 @@ export default function Profile() {
             <span>Lihat Google Sheets</span>
           </div>
         </Link>
+
+        <InstallButton />
       </div>
 
       <div className="space-y-2 mt-6">
