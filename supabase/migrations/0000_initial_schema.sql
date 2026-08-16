@@ -101,13 +101,3 @@ create policy "allow update via service role" on transactions for update
 create policy "allow delete via service role" on transactions for delete
   using (auth.role() = 'service_role');
 
-
--- 6. Seed Data Awal
-
-insert into payment_methods (name) values
-  ('Cash'), ('Transfer Bank'), ('QRIS'), ('E-Wallet');
-
-insert into categories (name, type) values
-  ('Gaji', 'income'), ('Bonus', 'income'), ('Saldo Awal', 'income'), ('Lainnya', 'income'),
-  ('Makan', 'expense'), ('Transport', 'expense'), ('Tagihan', 'expense'),
-  ('Belanja Rumah Tangga', 'expense'), ('Lainnya', 'expense');

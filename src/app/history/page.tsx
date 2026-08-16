@@ -1,43 +1,60 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, Filter, X } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 type FilterType = 'all' | 'income' | 'expense' | 'transfer';
 type DateRangeType = 'all' | 'today' | 'week' | 'month' | 'custom';
-
-// Mock data
-const recentTransactions = [
-  { id: '1', type: 'expense', amount: 150000, holder: 'istri', category: 'Belanja Dapur', date: '2026-08-16', description: 'Sayur & Buah' },
-  { id: '2', type: 'transfer', amount: 2000000, holder: 'istri', from_holder: 'suami', date: '2026-08-15', description: 'Uang Bulanan' },
-  { id: '3', type: 'income', amount: 15000000, holder: 'suami', category: 'Gaji', date: '2026-08-01', description: 'Gaji Juli' },
-  { id: '4', type: 'expense', amount: 50000, holder: 'suami', category: 'Makan', date: '2026-08-14', description: 'Makan Siang' },
-  { id: '5', type: 'expense', amount: 300000, holder: 'istri', category: 'Tagihan', date: '2026-08-10', description: 'Listrik' },
-];
 
 export default function History() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [dateRange, setDateRange] = useState<DateRangeType>('all');
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchTransactions = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*, categories(name)')
+      .is('deleted_at', null)
+      .order('trx_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      setTransactions(data);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
 
   const formatIDR = (amount: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
   };
 
-  // Basic mock filter logic for date range
   const isDateInRange = (dateStr: string, range: DateRangeType) => {
     if (range === 'all') return true;
-    const today = '2026-08-16'; // hardcoded based on mock data for demo
+    const today = new Date().toISOString().split('T')[0];
     if (range === 'today') return dateStr === today;
-    if (range === 'month') return dateStr.startsWith('2026-08');
-    // week is complex to mock easily, let's just show some
-    if (range === 'week') return ['2026-08-16', '2026-08-15', '2026-08-14'].includes(dateStr);
+    if (range === 'month') return dateStr.startsWith(today.substring(0, 7));
+    if (range === 'week') {
+      const d = new Date(dateStr);
+      const t = new Date(today);
+      const diffTime = Math.abs(t.getTime() - d.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+      return diffDays <= 7;
+    }
     return true;
   };
 
-  const filteredTransactions = recentTransactions.filter(trx => {
+  const filteredTransactions = transactions.filter(trx => {
     const matchType = activeFilter === 'all' ? true : trx.type === activeFilter;
-    const matchDate = isDateInRange(trx.date, dateRange);
+    const matchDate = trx.trx_date ? isDateInRange(trx.trx_date, dateRange) : true;
     return matchType && matchDate;
   });
 
