@@ -32,40 +32,69 @@ export async function POST(req: Request) {
     });
 
     const sheets = google.sheets({ version: 'v4', auth });
+    const range = 'Sheet1!A:I';
+
+    const rowData = [
+      record.id,
+      record.trx_date,
+      record.type,
+      record.amount,
+      record.holder,
+      record.from_holder || '-',
+      record.category_id || '-',
+      record.description || '-',
+      record.created_at
+    ];
 
     if (type === 'INSERT') {
       console.log('Action: Appending to Google Sheets', record.id);
-      
-      // We need to fetch the category name if we want to show it.
-      // But webhook payload only contains category_id. We'll just write category_id for now, 
-      // or you can do a supabase fetch here if needed. To keep it simple and robust, we write the raw data.
-      
-      const rowData = [
-        record.id,
-        record.trx_date,
-        record.type,
-        record.amount,
-        record.holder,
-        record.from_holder || '-',
-        record.category_id || '-',
-        record.description || '-',
-        record.created_at
-      ];
-
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: 'Sheet1!A:I', // Assuming default sheet name is 'Sheet1'
+        range,
         valueInputOption: 'USER_ENTERED',
-        requestBody: {
-          values: [rowData],
-        },
+        requestBody: { values: [rowData] },
       });
     } 
     else if (type === 'UPDATE' || type === 'DELETE') {
       console.log('Action:', type, 'on Google Sheets row for ID:', record.id);
-      // NOTE: Updating/Deleting specific rows in Sheets via API is complex (requires searching for the row index first).
-      // For MVP, we will only handle Append for new transactions. 
-      // If a user deletes a row in the app, it won't automatically delete in the sheet for now, to keep the audit trail safe.
+      
+      // Fetch existing rows to find the row index
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range,
+      });
+      
+      const rows = response.data.values;
+      if (rows && rows.length > 0) {
+        // Find the index of the row with the matching ID (Column A is index 0)
+        const rowIndex = rows.findIndex(row => row[0] === record.id);
+        
+        if (rowIndex !== -1) {
+          // Google Sheets rows are 1-indexed. Array index 0 is row 1.
+          const actualRowNumber = rowIndex + 1;
+          const updateRange = `Sheet1!A${actualRowNumber}:I${actualRowNumber}`;
+          
+          if (type === 'UPDATE') {
+            await sheets.spreadsheets.values.update({
+              spreadsheetId,
+              range: updateRange,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: { values: [rowData] },
+            });
+          } else if (type === 'DELETE') {
+            // For delete, we overwrite the row with a deleted note or clear it
+            const deletedRowData = [record.id, record.trx_date, 'DELETED', 0, record.holder, '-', '-', 'Dihapus dari aplikasi', record.created_at];
+            await sheets.spreadsheets.values.update({
+              spreadsheetId,
+              range: updateRange,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: { values: [deletedRowData] },
+            });
+          }
+        } else {
+          console.log('Row ID not found in Sheets. Cannot update/delete.');
+        }
+      }
     }
 
     return NextResponse.json({ success: true, message: 'Sync processed successfully' });
