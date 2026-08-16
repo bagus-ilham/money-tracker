@@ -9,6 +9,13 @@ export const metadata: Metadata = {
   title: "Money Tracker",
   description: "Household finance tracker for couples",
   manifest: "/manifest.json",
+  appleWebApp: {
+    title: "Money Tracker",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: "/icon-192x192.png",
+  },
 };
 
 export const viewport: Viewport = {
