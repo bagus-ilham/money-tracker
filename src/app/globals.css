@@ -1,24 +1,52 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #8b5cf6;
-  --color-primary-dark: #7c3aed;
-  --color-secondary: #f43f5e;
-  --color-background: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-light: #334155;
-  --color-text-main: #f8fafc;
-  --color-text-muted: #94a3b8;
+  --color-primary: var(--primary);
+  --color-primary-dark: var(--primary-dark);
+  --color-secondary: var(--secondary);
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-light: var(--surface-light);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
   
-  --color-income: #10b981;
-  --color-expense: #ef4444;
-  --color-transfer: #3b82f6;
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --color-transfer: var(--transfer);
 }
 
 @layer base {
   :root {
-    --background: #0f172a;
-    --foreground: #f8fafc;
+    /* Main Theme Colors - Emerald Green instead of Purple */
+    --primary: #10b981;
+    --primary-dark: #059669;
+    --secondary: #f43f5e;
+    
+    /* Light Mode Colors */
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-light: #f1f5f9;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    
+    --income: #10b981;
+    --expense: #ef4444;
+    --transfer: #3b82f6;
+
+    --background: var(--bg);
+    --foreground: var(--text-main);
+  }
+  
+  .dark {
+    /* Dark Mode Colors */
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-light: #334155;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    
+    --background: var(--bg);
+    --foreground: var(--text-main);
   }
   
   body {
@@ -31,9 +59,14 @@
 
 @layer utilities {
   .glass-panel {
-    background: rgba(30, 41, 59, 0.7);
+    background: var(--surface);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(125, 125, 125, 0.1);
+  }
+  
+  .dark .glass-panel {
+    background: rgba(30, 41, 59, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
   
@@ -41,7 +74,7 @@
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    background-image: linear-gradient(to right, #8b5cf6, #3b82f6);
+    background-image: linear-gradient(to right, var(--primary), var(--transfer));
   }
   
   .page-container {

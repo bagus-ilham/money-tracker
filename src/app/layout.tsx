@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -33,12 +34,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id">
+    <html lang="id" suppressHydrationWarning>
       <body className={`${inter.className} antialiased bg-background text-foreground`}>
-        <div className="page-container max-w-md mx-auto relative shadow-2xl shadow-black/50 bg-background min-h-screen">
-          {children}
-          <BottomNav />
-        </div>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <div className="page-container max-w-md mx-auto relative shadow-2xl shadow-black/50 bg-background min-h-screen">
+            {children}
+            <BottomNav />
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );
