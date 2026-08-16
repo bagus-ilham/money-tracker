@@ -45,3 +45,46 @@ export async function addTransaction(formData: {
   
   return { success: true, data };
 }
+
+export async function deleteTransaction(id: string) {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from('transactions')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .select();
+
+  if (error) {
+    console.error('Error deleting transaction:', error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/');
+  revalidatePath('/history');
+  
+  return { success: true, data };
+}
+
+export async function updateTransaction(id: string, formData: Partial<{
+  amount: number,
+  category_id: string,
+  trx_date: string,
+  description: string
+}>) {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from('transactions')
+    .update(formData)
+    .eq('id', id)
+    .select();
+
+  if (error) {
+    console.error('Error updating transaction:', error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/');
+  revalidatePath('/history');
+  
+  return { success: true, data };
+}

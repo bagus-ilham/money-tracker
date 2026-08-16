@@ -22,15 +22,7 @@ export default function Profile() {
       <div className="space-y-2">
         <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 ml-2">Pengaturan Sinkronisasi</h3>
         
-        <button className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-white/5 active:bg-surface-light transition-colors">
-          <div className="flex items-center gap-3 text-sm font-medium">
-            <RefreshCw size={18} className="text-primary" />
-            <span>Sync Google Sheets (Manual)</span>
-          </div>
-          <span className="text-xs text-text-muted bg-surface-light px-2 py-1 rounded-full">Pro</span>
-        </button>
-        
-        <Link href="/sync" className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-white/5 active:bg-surface-light transition-colors mt-2">
+        <Link href="https://docs.google.com/spreadsheets/d/1Ts4gqrcRJuf7gx8kfll4k7DGw7PXDMWeaQ0WWPJNnjI/edit" target="_blank" className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-white/5 active:bg-surface-light transition-colors mt-2">
           <div className="flex items-center gap-3 text-sm font-medium">
             <LinkIcon size={18} className="text-blue-400" />
             <span>Lihat Google Sheets</span>
