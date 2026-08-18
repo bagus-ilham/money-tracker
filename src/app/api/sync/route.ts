@@ -1,21 +1,12 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { getServiceRoleClient } from '@/lib/supabase';
+import { formatHolder } from '@/lib/utils';
 
 // Environment variables
 const clientEmail = process.env.GOOGLE_CLIENT_EMAIL || '';
 const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
 const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID || '';
-
-function formatHolder(h?: string) {
-  switch (h) {
-    case 'cash_suami': case 'suami': return 'Cash Suami';
-    case 'atm_suami': return 'ATM Suami';
-    case 'cash_istri': case 'istri': return 'Cash Istri';
-    case 'atm_istri': return 'ATM Istri';
-    default: return h || '';
-  }
-}
 
 export async function POST(req: Request) {
   try {
@@ -43,14 +34,22 @@ export async function POST(req: Request) {
     });
 
     const sheets = google.sheets({ version: 'v4', auth });
-    const range = 'Sheet1!A:I';
+    const range = 'Sheet1!A:J';
+
+    const supabase = getServiceRoleClient();
 
     // Fetch category name if present
     let categoryName = '';
     if (record.category_id) {
-      const supabase = getServiceRoleClient();
       const { data: cat } = await supabase.from('categories').select('name').eq('id', record.category_id).single();
       if (cat) categoryName = cat.name;
+    }
+
+    // Fetch payment method name if present
+    let paymentMethodName = '-';
+    if (record.payment_method_id) {
+      const { data: pm } = await supabase.from('payment_methods').select('name').eq('id', record.payment_method_id).single();
+      if (pm) paymentMethodName = pm.name;
     }
 
     const jenis = record.type === 'income' ? 'Pemasukan' : record.type === 'expense' ? 'Pengeluaran' : 'Transfer';
@@ -69,18 +68,19 @@ export async function POST(req: Request) {
 
     if (type === 'INSERT') {
       const newRowNumber = rows.length + 1;
-      const formulaSaldo = `=SUM($G$2:G${newRowNumber})-SUM($H$2:H${newRowNumber})`;
-      
+      const formulaSaldo = `=SUM($H$2:H${newRowNumber})-SUM($I$2:I${newRowNumber})`;
+
       const rowData = [
         record.id,
         record.trx_date,
         jenis,
         kategori,
         akun,
+        paymentMethodName,
         record.description || '-',
         pemasukan,
         pengeluaran,
-        formulaSaldo
+        formulaSaldo,
       ];
 
       console.log('Action: Appending to Google Sheets', record.id);
@@ -90,18 +90,17 @@ export async function POST(req: Request) {
         valueInputOption: 'USER_ENTERED',
         requestBody: { values: [rowData] },
       });
-    } 
-    else if (type === 'UPDATE' || type === 'DELETE') {
+    } else if (type === 'UPDATE' || type === 'DELETE') {
       console.log('Action:', type, 'on Google Sheets row for ID:', record.id);
-      
+
       if (rows.length > 0) {
-        const rowIndex = rows.findIndex(row => row[0] === record.id);
-        
+        const rowIndex = rows.findIndex((row) => row[0] === record.id);
+
         if (rowIndex !== -1) {
           const actualRowNumber = rowIndex + 1;
-          const updateRange = `Sheet1!A${actualRowNumber}:I${actualRowNumber}`;
-          const formulaSaldo = `=SUM($G$2:G${actualRowNumber})-SUM($H$2:H${actualRowNumber})`;
-          
+          const updateRange = `Sheet1!A${actualRowNumber}:J${actualRowNumber}`;
+          const formulaSaldo = `=SUM($H$2:H${actualRowNumber})-SUM($I$2:I${actualRowNumber})`;
+
           if (type === 'UPDATE') {
             const rowData = [
               record.id,
@@ -109,10 +108,11 @@ export async function POST(req: Request) {
               jenis,
               kategori,
               akun,
+              paymentMethodName,
               record.description || '-',
               pemasukan,
               pengeluaran,
-              formulaSaldo
+              formulaSaldo,
             ];
 
             await sheets.spreadsheets.values.update({
@@ -128,10 +128,11 @@ export async function POST(req: Request) {
               'Dihapus',
               '-',
               akun,
+              '-',
               'Dihapus dari aplikasi',
               '',
               '',
-              formulaSaldo
+              formulaSaldo,
             ];
             await sheets.spreadsheets.values.update({
               spreadsheetId,

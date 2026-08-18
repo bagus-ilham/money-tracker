@@ -17,7 +17,7 @@
 
 @layer base {
   :root {
-    /* Main Theme Colors - Emerald Green instead of Purple */
+    /* Emerald Theme */
     --primary: #10b981;
     --primary-dark: #059669;
     --secondary: #f43f5e;
@@ -62,7 +62,7 @@
     background: var(--surface);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(125, 125, 125, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.18);
   }
   
   .dark .glass-panel {
@@ -80,5 +80,13 @@
   .page-container {
     padding-bottom: 5rem; /* space for bottom nav */
     min-height: 100vh;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
