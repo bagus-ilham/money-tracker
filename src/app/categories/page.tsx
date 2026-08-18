@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { addCategory } from '@/app/actions';
+import { addCategory, updateCategory, deleteCategory } from '@/app/actions';
 
 type Category = {
   id: string;
@@ -14,15 +14,24 @@ type Category = {
 
 export default function Categories() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Add modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense');
+
+  // Edit modal state
+  const [editCategory, setEditCategory] = useState<Category | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+
+  // Delete modal state
+  const [deleteCategoryItem, setDeleteCategoryItem] = useState<Category | null>(null);
+
   const fetchCategories = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('categories')
       .select('*')
       .order('name');
@@ -52,6 +61,43 @@ export default function Categories() {
     setIsSubmitting(false);
   };
 
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editCategory || !editCatName.trim()) return;
+
+    setIsSubmitting(true);
+    const result = await updateCategory(editCategory.id, editCatName.trim());
+
+    if (result.success) {
+      await fetchCategories();
+      setEditCategory(null);
+      setEditCatName('');
+    } else {
+      alert('Gagal memperbarui kategori: ' + (result.error || 'Unknown error'));
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteCategoryItem) return;
+
+    setIsSubmitting(true);
+    const result = await deleteCategory(deleteCategoryItem.id);
+
+    if (result.success) {
+      await fetchCategories();
+      setDeleteCategoryItem(null);
+    } else {
+      alert('Gagal menghapus kategori: ' + (result.error || 'Unknown error'));
+    }
+    setIsSubmitting(false);
+  };
+
+  const openEditModal = (cat: Category) => {
+    setEditCategory(cat);
+    setEditCatName(cat.name);
+  };
+
   const incomes = categories.filter(c => c.type === 'income');
   const expenses = categories.filter(c => c.type === 'expense');
 
@@ -66,37 +112,75 @@ export default function Categories() {
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
-          className="p-2 bg-primary/20 text-primary rounded-full hover:bg-primary/30 transition-colors"
+          className="p-2 bg-primary/20 text-primary rounded-full hover:bg-primary/30 transition-colors flex items-center gap-1 px-3 text-xs font-semibold"
         >
-          <Plus size={20} />
+          <Plus size={16} /> Tambah
         </button>
       </header>
 
       {isLoading ? (
-        <div className="text-center py-10 text-text-muted text-sm">Memuat...</div>
+        <div className="flex justify-center py-10"><Loader2 className="animate-spin text-primary" /></div>
       ) : (
         <div className="space-y-6 pb-28">
+          {/* Income Categories */}
           <section>
-            <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">Pemasukan</h2>
-            <div className="glass-panel rounded-2xl divide-y divide-white/5">
+            <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3 ml-1">Pemasukan</h2>
+            <div className="glass-panel rounded-2xl divide-y divide-white/5 overflow-hidden">
               {incomes.length === 0 ? (
                 <div className="p-4 text-sm text-text-muted">Belum ada kategori pemasukan.</div>
               ) : (
                 incomes.map((cat) => (
-                  <div key={cat.id} className="p-4 text-sm font-medium">{cat.name}</div>
+                  <div key={cat.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+                    <span className="text-sm font-medium">{cat.name}</span>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => openEditModal(cat)}
+                        className="p-2 text-text-muted hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+                        title="Edit Kategori"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => setDeleteCategoryItem(cat)}
+                        className="p-2 text-expense/70 hover:text-expense rounded-lg hover:bg-expense/10 transition-colors"
+                        title="Hapus Kategori"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
                 ))
               )}
             </div>
           </section>
 
+          {/* Expense Categories */}
           <section>
-            <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">Pengeluaran</h2>
-            <div className="glass-panel rounded-2xl divide-y divide-white/5">
+            <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3 ml-1">Pengeluaran</h2>
+            <div className="glass-panel rounded-2xl divide-y divide-white/5 overflow-hidden">
               {expenses.length === 0 ? (
                 <div className="p-4 text-sm text-text-muted">Belum ada kategori pengeluaran.</div>
               ) : (
                 expenses.map((cat) => (
-                  <div key={cat.id} className="p-4 text-sm font-medium">{cat.name}</div>
+                  <div key={cat.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+                    <span className="text-sm font-medium">{cat.name}</span>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => openEditModal(cat)}
+                        className="p-2 text-text-muted hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+                        title="Edit Kategori"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => setDeleteCategoryItem(cat)}
+                        className="p-2 text-expense/70 hover:text-expense rounded-lg hover:bg-expense/10 transition-colors"
+                        title="Hapus Kategori"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
                 ))
               )}
             </div>
@@ -153,11 +237,76 @@ export default function Categories() {
               <button 
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-xl mt-2 transition-colors disabled:opacity-50"
+                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-xl mt-2 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
               >
-                {isSubmitting ? 'Menyimpan...' : 'Simpan Kategori'}
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Simpan Kategori'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Category Modal */}
+      {editCategory && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 pb-safe-area bg-black/60 backdrop-blur-sm transition-opacity">
+          <div className="w-full max-w-md bg-surface border border-white/10 rounded-3xl p-6 shadow-2xl relative animate-in slide-in-from-bottom-10">
+            <button 
+              onClick={() => setEditCategory(null)}
+              className="absolute top-5 right-5 p-2 bg-surface-light rounded-full text-text-muted hover:text-white"
+            >
+              <X size={18} />
+            </button>
+            <h2 className="text-lg font-bold mb-5">Edit Kategori</h2>
+            
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">Nama Kategori</label>
+                <input 
+                  type="text" 
+                  value={editCatName}
+                  onChange={(e) => setEditCatName(e.target.value)}
+                  className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary transition-all"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <button 
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-xl mt-2 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+              >
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Simpan Perubahan & Sync Sheets'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Category Modal */}
+      {deleteCategoryItem && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 pb-safe-area bg-black/60 backdrop-blur-sm transition-opacity">
+          <div className="w-full max-w-md bg-surface border border-white/10 rounded-3xl p-6 shadow-2xl relative animate-in slide-in-from-bottom-10">
+            <h2 className="text-lg font-bold mb-2">Hapus Kategori</h2>
+            <p className="text-sm text-text-muted mb-6">
+              Apakah Anda yakin ingin menghapus kategori <span className="font-bold text-white">&quot;{deleteCategoryItem.name}&quot;</span>?
+            </p>
+
+            <div className="space-y-3">
+              <button 
+                onClick={handleDeleteConfirm}
+                disabled={isSubmitting}
+                className="w-full bg-expense/10 text-expense border border-expense/20 hover:bg-expense/20 font-bold py-3.5 rounded-xl transition-colors flex justify-center items-center gap-2"
+              >
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Ya, Hapus Kategori'}
+              </button>
+              <button 
+                onClick={() => setDeleteCategoryItem(null)}
+                className="w-full text-text-muted hover:text-white py-2 text-sm font-semibold"
+              >
+                Batal
+              </button>
+            </div>
           </div>
         </div>
       )}

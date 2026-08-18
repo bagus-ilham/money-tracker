@@ -1,6 +1,7 @@
 'use server';
 
 import { getServiceRoleClient } from '@/lib/supabase';
+import { resyncGoogleSheets } from '@/lib/sheetsSync';
 import { revalidatePath } from 'next/cache';
 
 export async function addCategory(name: string, type: 'income' | 'expense') {
@@ -15,7 +16,59 @@ export async function addCategory(name: string, type: 'income' | 'expense') {
     console.error('Error adding category:', error);
     return { success: false, error: error.message };
   }
+
+  revalidatePath('/categories');
+  return { success: true, data };
+}
+
+export async function updateCategory(id: string, name: string) {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from('categories')
+    .update({ name })
+    .eq('id', id)
+    .select();
+
+  if (error) {
+    console.error('Error updating category:', error);
+    return { success: false, error: error.message };
+  }
+
+  // Trigger Google Sheets resync so updated category name reflects on all transactions in Sheets
+  await resyncGoogleSheets();
+
+  revalidatePath('/categories');
+  revalidatePath('/history');
+  revalidatePath('/');
+  return { success: true, data };
+}
+
+export async function deleteCategory(id: string) {
+  const supabase = getServiceRoleClient();
   
+  // Detach category from any active transactions before deleting to prevent foreign key errors
+  await supabase
+    .from('transactions')
+    .update({ category_id: null })
+    .eq('category_id', id);
+
+  const { data, error } = await supabase
+    .from('categories')
+    .delete()
+    .eq('id', id)
+    .select();
+
+  if (error) {
+    console.error('Error deleting category:', error);
+    return { success: false, error: error.message };
+  }
+
+  // Trigger Google Sheets resync so deleted category references are updated in Sheets
+  await resyncGoogleSheets();
+
+  revalidatePath('/categories');
+  revalidatePath('/history');
+  revalidatePath('/');
   return { success: true, data };
 }
 
@@ -39,7 +92,6 @@ export async function addTransaction(formData: {
     return { success: false, error: error.message };
   }
 
-  // Trigger revalidation so dashboard updates immediately
   revalidatePath('/');
   revalidatePath('/history');
   
