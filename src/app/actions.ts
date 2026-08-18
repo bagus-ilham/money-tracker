@@ -22,8 +22,8 @@ export async function addCategory(name: string, type: 'income' | 'expense') {
 export async function addTransaction(formData: {
   type: 'income' | 'expense' | 'transfer',
   amount: number,
-  holder: 'suami' | 'istri',
-  from_holder?: 'suami' | 'istri',
+  holder: 'cash_suami' | 'atm_suami' | 'cash_istri' | 'atm_istri' | 'suami' | 'istri',
+  from_holder?: 'cash_suami' | 'atm_suami' | 'cash_istri' | 'atm_istri' | 'suami' | 'istri',
   category_id?: string,
   trx_date: string,
   description?: string

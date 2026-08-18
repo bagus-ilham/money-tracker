@@ -75,7 +75,7 @@ export default function Categories() {
       {isLoading ? (
         <div className="text-center py-10 text-text-muted text-sm">Memuat...</div>
       ) : (
-        <div className="space-y-6 pb-10">
+        <div className="space-y-6 pb-28">
           <section>
             <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">Pemasukan</h2>
             <div className="glass-panel rounded-2xl divide-y divide-white/5">

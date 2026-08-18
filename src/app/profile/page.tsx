@@ -1,11 +1,11 @@
-import { Settings, RefreshCw, LogOut, Info, Link as LinkIcon, Database } from 'lucide-react';
+import { Settings, LogOut, Info, Link as LinkIcon, Database } from 'lucide-react';
 import Link from 'next/link';
 
 import InstallButton from '@/components/InstallButton';
 
 export default function Profile() {
   return (
-    <main className="min-h-screen p-5 pt-8">
+    <main className="min-h-screen p-5 pt-8 pb-28">
       <header className="mb-6">
         <h1 className="text-xl font-bold">Profil</h1>
       </header>
@@ -40,14 +40,14 @@ export default function Profile() {
         <Link href="/categories" className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-white/5 active:bg-surface-light transition-colors">
           <div className="flex items-center gap-3 text-sm font-medium">
             <Database size={18} className="text-green-400" />
-            <span>Kelola Kategori & Metode</span>
+            <span>Kelola Kategori</span>
           </div>
         </Link>
 
         <Link href="/settings" className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-white/5 active:bg-surface-light transition-colors">
           <div className="flex items-center gap-3 text-sm font-medium">
             <Settings size={18} className="text-text-muted" />
-            <span>Pengaturan Tema & Notifikasi</span>
+            <span>Pengaturan Tema</span>
           </div>
         </Link>
 

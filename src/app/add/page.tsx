@@ -9,6 +9,14 @@ import { addTransaction } from '@/app/actions';
 
 type TrxType = 'income' | 'expense' | 'transfer';
 type Category = { id: string, name: string, type: 'income' | 'expense' };
+type HolderAccount = 'cash_suami' | 'atm_suami' | 'cash_istri' | 'atm_istri';
+
+const HOLDER_OPTIONS: { value: HolderAccount; label: string }[] = [
+  { value: 'cash_suami', label: 'Cash Suami' },
+  { value: 'atm_suami', label: 'ATM Suami' },
+  { value: 'cash_istri', label: 'Cash Istri' },
+  { value: 'atm_istri', label: 'ATM Istri' },
+];
 
 export default function AddTransaction() {
   const router = useRouter();
@@ -19,8 +27,8 @@ export default function AddTransaction() {
   // Form states
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [holder, setHolder] = useState<'suami' | 'istri'>('suami');
-  const [fromHolder, setFromHolder] = useState<'suami' | 'istri'>('suami');
+  const [holder, setHolder] = useState<HolderAccount>('cash_suami');
+  const [fromHolder, setFromHolder] = useState<HolderAccount>('atm_suami');
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
 
@@ -42,9 +50,20 @@ export default function AddTransaction() {
     }
   }, [type, activeCategories, categoryId]);
 
+  // Ensure transfer fromHolder and holder are not identical
+  useEffect(() => {
+    if (type === 'transfer' && fromHolder === holder) {
+      const available = HOLDER_OPTIONS.find(opt => opt.value !== fromHolder);
+      if (available) setHolder(available.value);
+    }
+  }, [type, fromHolder, holder]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || Number(amount) <= 0) return alert('Nominal harus lebih dari 0');
+    if (type === 'transfer' && fromHolder === holder) {
+      return alert('Pengirim dan penerima transfer tidak boleh sama');
+    }
 
     setIsSubmitting(true);
     const result = await addTransaction({
@@ -66,7 +85,7 @@ export default function AddTransaction() {
   };
 
   return (
-    <main className="min-h-screen bg-background pb-20">
+    <main className="min-h-screen bg-background pb-28">
       {/* Header */}
       <header className="pt-8 pb-4 px-5 flex items-center gap-4 bg-surface/50 backdrop-blur-md sticky top-0 z-10 border-b border-white/5">
         <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-white/10 transition-colors">
@@ -135,15 +154,16 @@ export default function AddTransaction() {
             {/* Holder */}
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1.5 ml-1">
-                {type === 'transfer' ? 'Penerima' : 'Pemegang Cash'}
+                {type === 'transfer' ? 'Penerima' : 'Akun / Cash'}
               </label>
               <select 
                 value={holder}
-                onChange={(e) => setHolder(e.target.value as 'suami'|'istri')}
+                onChange={(e) => setHolder(e.target.value as HolderAccount)}
                 className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary transition-all appearance-none"
               >
-                <option value="suami">Suami</option>
-                <option value="istri">Istri</option>
+                {HOLDER_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -154,11 +174,12 @@ export default function AddTransaction() {
               <label className="block text-xs font-medium text-text-muted mb-1.5 ml-1">Dari (Pengirim)</label>
               <select 
                 value={fromHolder}
-                onChange={(e) => setFromHolder(e.target.value as 'suami'|'istri')}
+                onChange={(e) => setFromHolder(e.target.value as HolderAccount)}
                 className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary transition-all appearance-none"
               >
-                <option value="suami">Suami</option>
-                <option value="istri">Istri</option>
+                {HOLDER_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
             </div>
           )}

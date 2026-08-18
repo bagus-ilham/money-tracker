@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, Filter, X, Edit2, Trash2, MoreVertical, Loader2 } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, Filter, X, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { deleteTransaction, updateTransaction } from '@/app/actions';
 
@@ -10,7 +10,8 @@ type DateRangeType = 'all' | 'today' | 'week' | 'month' | 'custom';
 
 export default function History() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [dateRange, setDateRange] = useState<DateRangeType>('all');
+  // Default dateRange to 'today' as requested
+  const [dateRange, setDateRange] = useState<DateRangeType>('today');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -51,6 +52,17 @@ export default function History() {
 
   const formatIDR = (amount: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
+  };
+
+  const formatHolderName = (h?: string) => {
+    if (!h) return '';
+    switch (h) {
+      case 'cash_suami': case 'suami': return 'Cash Suami';
+      case 'atm_suami': return 'ATM Suami';
+      case 'cash_istri': case 'istri': return 'Cash Istri';
+      case 'atm_istri': return 'ATM Istri';
+      default: return h;
+    }
   };
 
   const isDateInRange = (dateStr: string, range: DateRangeType) => {
@@ -114,9 +126,16 @@ export default function History() {
   };
 
   return (
-    <main className="min-h-screen p-5 pt-8 relative">
+    <main className="min-h-screen p-5 pt-8 relative pb-28">
       <header className="mb-6 flex justify-between items-center">
-        <h1 className="text-xl font-bold">Riwayat Transaksi</h1>
+        <div>
+          <h1 className="text-xl font-bold">Riwayat Transaksi</h1>
+          <p className="text-xs text-text-muted mt-0.5">
+            {dateRange === 'today' ? 'Menampilkan Hari Ini' :
+             dateRange === 'week' ? '7 Hari Terakhir' :
+             dateRange === 'month' ? 'Bulan Ini' : 'Semua Waktu'}
+          </p>
+        </div>
         <button 
           onClick={() => setShowFilterModal(true)}
           className={`p-2 rounded-full border transition-colors ${
@@ -129,6 +148,7 @@ export default function History() {
         </button>
       </header>
 
+      {/* Type Filter Chips */}
       <div className="flex gap-2 overflow-x-auto pb-4 mb-2 scrollbar-hide">
         <button onClick={() => setActiveFilter('all')} className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${activeFilter === 'all' ? 'bg-primary text-white' : 'bg-surface border border-white/5 text-text-muted hover:text-white'}`}>Semua</button>
         <button onClick={() => setActiveFilter('income')} className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${activeFilter === 'income' ? 'bg-primary text-white' : 'bg-surface border border-white/5 text-text-muted hover:text-white'}`}>Pemasukan</button>
@@ -136,7 +156,7 @@ export default function History() {
         <button onClick={() => setActiveFilter('transfer')} className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${activeFilter === 'transfer' ? 'bg-primary text-white' : 'bg-surface border border-white/5 text-text-muted hover:text-white'}`}>Transfer</button>
       </div>
 
-      <div className="space-y-3 pb-24">
+      <div className="space-y-3">
         {isLoading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin text-primary" /></div>
         ) : filteredTransactions.length === 0 ? (
@@ -168,7 +188,7 @@ export default function History() {
                   {formatIDR(trx.amount)}
                 </p>
                 <p className="text-[10px] text-text-muted mt-1 uppercase tracking-wider font-medium">
-                  {trx.type === 'transfer' ? `${trx.from_holder} → ${trx.holder}` : trx.holder}
+                  {trx.type === 'transfer' ? `${formatHolderName(trx.from_holder)} → ${formatHolderName(trx.holder)}` : formatHolderName(trx.holder)}
                 </p>
               </div>
             </div>
@@ -242,10 +262,10 @@ export default function History() {
             <h2 className="text-lg font-bold mb-5">Filter Waktu</h2>
             <div className="space-y-3">
               {[
-                { value: 'all', label: 'Semua Waktu' },
                 { value: 'today', label: 'Hari Ini' },
                 { value: 'week', label: '7 Hari Terakhir' },
                 { value: 'month', label: 'Bulan Ini' },
+                { value: 'all', label: 'Semua Waktu' },
               ].map((opt) => (
                 <button key={opt.value} onClick={() => { setDateRange(opt.value as DateRangeType); setShowFilterModal(false); }} className={`w-full text-left px-5 py-4 rounded-xl text-sm font-semibold transition-colors ${dateRange === opt.value ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-surface-light border border-white/5 text-text-muted hover:bg-white/5'}`}>
                   {opt.label}
