@@ -34,3 +34,33 @@ export interface Transaction {
   categories?: { name: string } | null;
   payment_methods?: { name: string } | null;
 }
+
+export type DateFilterPreset = 'today' | 'week' | 'month' | 'last_month' | 'salary_cycle' | 'custom' | 'all';
+
+export interface DateRangeFilter {
+  preset: DateFilterPreset;
+  startDate: string;
+  endDate: string;
+  label: string;
+  salaryCycleId?: string;
+}
+
+export interface SalaryCyclePeriod {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  salaryAmount: number;
+  isCurrent: boolean;
+  description?: string;
+}
+
+export interface SalaryCycleStats {
+  salaryAmount: number;
+  totalExpense: number;
+  remainingSalary: number;
+  dailyExpenseAvg: number;
+  daysInPeriod: number;
+  daysElapsed: number;
+}
+

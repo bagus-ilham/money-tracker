@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -12,25 +12,45 @@ import {
   Loader2,
   AlertTriangle,
   Search,
+  Calendar,
+  Tag,
+  TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { deleteTransaction, updateTransaction } from '@/app/actions';
 import { useToast } from '@/components/Toast';
 import CurrencyInput from '@/components/CurrencyInput';
 import { formatIDR, formatHolder, HOLDER_OPTIONS } from '@/lib/utils';
-import { Transaction, Category, PaymentMethod, HolderAccount, TrxType } from '@/lib/types';
+import {
+  Transaction,
+  Category,
+  PaymentMethod,
+  HolderAccount,
+  TrxType,
+  DateRangeFilter,
+} from '@/lib/types';
+import {
+  detectSalaryCycles,
+  isDateWithinRange,
+  getPresetDateRange,
+} from '@/lib/salaryCycle';
+import DateRangeModal from '@/components/DateRangeModal';
 
 type FilterType = 'all' | 'income' | 'expense' | 'transfer';
 type HolderFilterType = 'all' | HolderAccount;
-type DateRangeType = 'all' | 'today' | 'week' | 'month';
 
 export default function History() {
   const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [holderFilter, setHolderFilter] = useState<HolderFilterType>('all');
-  const [dateRange, setDateRange] = useState<DateRangeType>('today');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Unified Date Range Filter (Default: Bulan Ini)
+  const [dateFilter, setDateFilter] = useState<DateRangeFilter>(() => getPresetDateRange('month'));
   const [showFilterModal, setShowFilterModal] = useState(false);
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -85,26 +105,25 @@ export default function History() {
     fetchTransactions();
   }, []);
 
-  const isDateInRange = (dateStr: string, range: DateRangeType) => {
-    if (range === 'all') return true;
-    const today = new Date().toISOString().split('T')[0];
-    if (range === 'today') return dateStr === today;
-    if (range === 'month') return dateStr.startsWith(today.substring(0, 7));
-    if (range === 'week') {
-      const d = new Date(dateStr);
-      const t = new Date(today);
-      const diffTime = Math.abs(t.getTime() - d.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays <= 7;
-    }
-    return true;
-  };
+  // Compute detected salary cycles
+  const salaryCycles = useMemo(() => {
+    return detectSalaryCycles(transactions);
+  }, [transactions]);
 
+  // Filtered transactions
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return transactions.filter((trx) => {
+      // 1. Type Match
       const matchType = activeFilter === 'all' ? true : trx.type === activeFilter;
-      const matchDate = trx.trx_date ? isDateInRange(trx.trx_date, dateRange) : true;
+
+      // 2. Date Match
+      const matchDate =
+        dateFilter.preset === 'all'
+          ? true
+          : isDateWithinRange(trx.trx_date, dateFilter.startDate, dateFilter.endDate);
+
+      // 3. Holder Match
       const matchHolder =
         holderFilter === 'all'
           ? true
@@ -113,7 +132,11 @@ export default function History() {
             (holderFilter === 'cash_suami' && (trx.holder === 'suami' || trx.from_holder === 'suami')) ||
             (holderFilter === 'cash_istri' && (trx.holder === 'istri' || trx.from_holder === 'istri'));
 
-      // Search match
+      // 4. Category Match
+      const matchCategory =
+        categoryFilter === 'all' ? true : trx.category_id === categoryFilter;
+
+      // 5. Search Match
       const matchSearch =
         !q ||
         (trx.description && trx.description.toLowerCase().includes(q)) ||
@@ -124,9 +147,20 @@ export default function History() {
         formatHolder(trx.holder).toLowerCase().includes(q) ||
         (trx.from_holder && formatHolder(trx.from_holder).toLowerCase().includes(q));
 
-      return matchType && matchDate && matchHolder && matchSearch;
+      return matchType && matchDate && matchHolder && matchCategory && matchSearch;
     });
-  }, [transactions, activeFilter, dateRange, holderFilter, searchQuery]);
+  }, [transactions, activeFilter, dateFilter, holderFilter, categoryFilter, searchQuery]);
+
+  // Mini summary of filtered transactions
+  const summaryStats = useMemo(() => {
+    const totalIncome = filteredTransactions
+      .filter((t) => t.type === 'income')
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const totalExpense = filteredTransactions
+      .filter((t) => t.type === 'expense')
+      .reduce((s, t) => s + Number(t.amount), 0);
+    return { totalIncome, totalExpense };
+  }, [filteredTransactions]);
 
   const handleDelete = async () => {
     if (!selectedTrx) return;
@@ -159,9 +193,9 @@ export default function History() {
 
     setIsSubmitting(true);
 
-    const updatePayload: any = {
+    const updatePayload = {
       amount: editAmount,
-      description: editForm.description.trim() || null,
+      description: editForm.description.trim() || undefined,
       category_id: selectedTrx.type !== 'transfer' ? editForm.category_id || null : null,
       payment_method_id: editForm.payment_method_id || null,
       holder: editForm.holder,
@@ -205,32 +239,50 @@ export default function History() {
     setShowOptionsModal(true);
   };
 
+  const hasActiveCustomFilters =
+    dateFilter.preset !== 'month' ||
+    categoryFilter !== 'all' ||
+    holderFilter !== 'all' ||
+    activeFilter !== 'all' ||
+    searchQuery !== '';
+
+  const handleResetFilters = () => {
+    setDateFilter(getPresetDateRange('month'));
+    setCategoryFilter('all');
+    setHolderFilter('all');
+    setActiveFilter('all');
+    setSearchQuery('');
+  };
+
+  // Categories available for filter based on active type
+  const filterCategories = useMemo(() => {
+    if (activeFilter === 'income') return categories.filter((c) => c.type === 'income');
+    if (activeFilter === 'expense') return categories.filter((c) => c.type === 'expense');
+    return categories;
+  }, [categories, activeFilter]);
+
   return (
     <main className="min-h-screen p-5 pt-8 relative pb-28">
+      {/* Header */}
       <header className="mb-4 flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold">Riwayat Transaksi</h1>
           <p className="text-xs text-text-muted mt-0.5 font-medium">
-            {dateRange === 'today'
-              ? 'Hari Ini'
-              : dateRange === 'week'
-              ? '7 Hari Terakhir'
-              : dateRange === 'month'
-              ? 'Bulan Ini'
-              : 'Semua Waktu'}
+            {dateFilter.label}
             {` • ${filteredTransactions.length} Transaksi`}
           </p>
         </div>
         <button
           onClick={() => setShowFilterModal(true)}
-          className={`p-2.5 rounded-2xl border transition-colors ${
-            dateRange !== 'all'
-              ? 'bg-primary/20 border-primary text-primary'
+          className={`p-2.5 rounded-2xl border transition-all flex items-center gap-1.5 text-xs font-semibold ${
+            dateFilter.preset !== 'all'
+              ? 'bg-primary/20 border-primary text-primary shadow-sm'
               : 'bg-surface-light border-foreground/10 dark:border-white/10 text-text-muted hover:text-foreground'
           }`}
-          title="Filter Waktu"
+          title="Filter Rentang Waktu / Siklus Gajian"
         >
-          <Filter size={18} />
+          <Calendar size={16} />
+          <span className="hidden sm:inline">Periode</span>
         </button>
       </header>
 
@@ -252,6 +304,29 @@ export default function History() {
             <X size={14} />
           </button>
         )}
+      </div>
+
+      {/* Mini Summary of Filtered Items */}
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="p-2.5 rounded-xl bg-surface border border-foreground/5 dark:border-white/5 flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-income/15 text-income">
+            <TrendingUp size={14} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-text-muted">Total Masuk</p>
+            <p className="text-xs font-bold text-income truncate">+{formatIDR(summaryStats.totalIncome)}</p>
+          </div>
+        </div>
+
+        <div className="p-2.5 rounded-xl bg-surface border border-foreground/5 dark:border-white/5 flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-expense/15 text-expense">
+            <TrendingDown size={14} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-text-muted">Total Keluar</p>
+            <p className="text-xs font-bold text-expense truncate">-{formatIDR(summaryStats.totalExpense)}</p>
+          </div>
+        </div>
       </div>
 
       {/* Type Filter Chips */}
@@ -298,8 +373,37 @@ export default function History() {
         </button>
       </div>
 
+      {/* Category Filter Chips (when not viewing only transfers) */}
+      {activeFilter !== 'transfer' && filterCategories.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-2 scrollbar-hide">
+          <button
+            onClick={() => setCategoryFilter('all')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
+              categoryFilter === 'all'
+                ? 'bg-surface-light text-foreground border border-foreground/20 dark:border-white/20 font-bold'
+                : 'bg-transparent text-text-muted hover:text-foreground border border-foreground/5 dark:border-white/5'
+            }`}
+          >
+            <Tag size={12} /> Semua Kategori
+          </button>
+          {filterCategories.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setCategoryFilter(c.id)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
+                categoryFilter === c.id
+                  ? 'bg-primary/15 text-primary border border-primary/40 font-bold'
+                  : 'bg-transparent text-text-muted hover:text-foreground border border-foreground/5 dark:border-white/5'
+              }`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Holder Filter Chips */}
-      <div className="flex gap-1.5 overflow-x-auto pb-4 mb-3 scrollbar-hide">
+      <div className="flex gap-1.5 overflow-x-auto pb-3 mb-2 scrollbar-hide">
         <button
           onClick={() => setHolderFilter('all')}
           className={`px-3 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
@@ -325,6 +429,25 @@ export default function History() {
         ))}
       </div>
 
+      {/* Active Filter Pills Bar (Quick Reset) */}
+      {hasActiveCustomFilters && (
+        <div className="flex items-center justify-between p-2 px-3 mb-3 bg-surface-light/60 rounded-xl border border-foreground/5 dark:border-white/5 text-[11px]">
+          <span className="text-text-muted font-medium truncate">
+            Filter aktif: <span className="text-foreground font-semibold">{dateFilter.label}</span>
+            {categoryFilter !== 'all' && (
+              <span> • Kategori: {categories.find((c) => c.id === categoryFilter)?.name}</span>
+            )}
+            {holderFilter !== 'all' && <span> • Akun: {formatHolder(holderFilter)}</span>}
+          </span>
+          <button
+            onClick={handleResetFilters}
+            className="text-primary font-bold hover:underline shrink-0 ml-2"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
       {/* Transactions List */}
       <div className="space-y-2.5">
         {isLoading ? (
@@ -333,7 +456,9 @@ export default function History() {
           </div>
         ) : filteredTransactions.length === 0 ? (
           <div className="text-center py-12 glass-panel rounded-2xl p-6 text-text-muted text-sm">
-            {searchQuery ? `Tidak ada hasil pencarian "${searchQuery}".` : 'Tidak ada transaksi untuk filter ini.'}
+            {searchQuery
+              ? `Tidak ada hasil pencarian "${searchQuery}".`
+              : 'Tidak ada transaksi untuk filter ini.'}
           </div>
         ) : (
           filteredTransactions.map((trx) => (
@@ -395,6 +520,15 @@ export default function History() {
           ))
         )}
       </div>
+
+      {/* Date Range Modal */}
+      <DateRangeModal
+        isOpen={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        currentFilter={dateFilter}
+        onSelectFilter={(newFilter) => setDateFilter(newFilter)}
+        salaryCycles={salaryCycles}
+      />
 
       {/* Options Action Sheet Modal */}
       {showOptionsModal && selectedTrx && (
@@ -617,50 +751,6 @@ export default function History() {
                 {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : 'Simpan Perubahan'}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Date Filter Modal */}
-      {showFilterModal && (
-        <div
-          className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 pb-safe-area bg-black/60 backdrop-blur-sm transition-opacity"
-          onClick={() => setShowFilterModal(false)}
-        >
-          <div
-            className="w-full max-w-md bg-surface border border-foreground/10 dark:border-white/10 rounded-3xl p-6 shadow-2xl relative animate-in slide-in-from-bottom-10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowFilterModal(false)}
-              className="absolute top-5 right-5 p-2 bg-surface-light rounded-full text-text-muted hover:text-foreground"
-            >
-              <X size={18} />
-            </button>
-            <h2 className="text-base font-bold mb-4">Filter Rentang Waktu</h2>
-            <div className="space-y-2">
-              {[
-                { value: 'today', label: 'Hari Ini' },
-                { value: 'week', label: '7 Hari Terakhir' },
-                { value: 'month', label: 'Bulan Ini' },
-                { value: 'all', label: 'Semua Waktu' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => {
-                    setDateRange(opt.value as DateRangeType);
-                    setShowFilterModal(false);
-                  }}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-xs font-semibold transition-colors ${
-                    dateRange === opt.value
-                      ? 'bg-primary text-white shadow-lg shadow-primary/20'
-                      : 'bg-surface-light border border-foreground/5 dark:border-white/5 text-text-muted hover:bg-foreground/5'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}

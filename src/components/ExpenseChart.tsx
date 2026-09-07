@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
+import Link from 'next/link';
 import { formatIDR } from '@/lib/utils';
-import { PieChart as PieIcon } from 'lucide-react';
+import { PieChart as PieIcon, ChevronRight } from 'lucide-react';
 
 export interface CategoryExpenseItem {
   name: string;
@@ -27,46 +28,67 @@ const PALETTE = [
 ];
 
 export default function ExpenseChart({ data, totalExpense, monthName }: ExpenseChartProps) {
+  // Pure computation of SVG donut segments without mutable variable reassignment in render
+  const segments = useMemo(() => {
+    if (data.length === 0 || totalExpense <= 0) return [];
+    const size = 160;
+    const strokeWidth = 24;
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+
+    let offsetAcc = 0;
+    return data.map((item, idx) => {
+      const percentage = item.amount / totalExpense;
+      const strokeDasharray = `${percentage * circumference} ${circumference}`;
+      const strokeDashoffset = -offsetAcc;
+      offsetAcc += percentage * circumference;
+      const color = PALETTE[idx % PALETTE.length];
+
+      return {
+        name: item.name,
+        amount: item.amount,
+        percentage: Math.round(percentage * 100),
+        color,
+        strokeDasharray,
+        strokeDashoffset,
+      };
+    });
+  }, [data, totalExpense]);
+
   if (data.length === 0 || totalExpense <= 0) {
     return (
       <div className="glass-panel p-5 rounded-2xl mb-8 text-center text-xs text-text-muted">
         <PieIcon className="w-8 h-8 mx-auto mb-2 opacity-30 text-primary" />
-        Belum ada pengeluaran di bulan {monthName}.
+        <p>Belum ada pengeluaran di bulan {monthName}.</p>
+        <Link
+          href="/categories"
+          className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-semibold mt-2"
+        >
+          Cek Keuangan Kategori <ChevronRight size={13} />
+        </Link>
       </div>
     );
   }
 
-  // Calculate SVG donut segments
   const size = 160;
   const strokeWidth = 24;
   const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  let accumulatedOffset = 0;
-  const segments = data.map((item, idx) => {
-    const percentage = item.amount / totalExpense;
-    const strokeDasharray = `${percentage * circumference} ${circumference}`;
-    const strokeDashoffset = -accumulatedOffset;
-    accumulatedOffset += percentage * circumference;
-    const color = PALETTE[idx % PALETTE.length];
-
-    return {
-      name: item.name,
-      amount: item.amount,
-      percentage: Math.round(percentage * 100),
-      color,
-      strokeDasharray,
-      strokeDashoffset,
-    };
-  });
 
   return (
     <div className="glass-panel p-5 rounded-2xl mb-8">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider">
-          Pengeluaran per Kategori ({monthName})
-        </h2>
-        <span className="text-[10px] font-bold text-expense px-2 py-0.5 bg-expense/10 rounded-full">
+        <div>
+          <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider">
+            Pengeluaran per Kategori ({monthName})
+          </h2>
+          <Link
+            href="/categories"
+            className="text-[11px] text-primary hover:underline font-semibold inline-flex items-center gap-0.5 mt-0.5"
+          >
+            Cek Rincian Lengkap <ChevronRight size={12} />
+          </Link>
+        </div>
+        <span className="text-[10px] font-bold text-expense px-2.5 py-1 bg-expense/10 rounded-full">
           {formatIDR(totalExpense)}
         </span>
       </div>
