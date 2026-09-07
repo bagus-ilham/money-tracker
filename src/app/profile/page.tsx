@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
   HandCoins,
+  PiggyBank,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import InstallButton from '@/components/InstallButton';
@@ -122,6 +123,18 @@ export default function Profile() {
               <HandCoins size={18} />
             </div>
             <span>Catatan Hutang & Piutang</span>
+          </div>
+        </Link>
+
+        <Link
+          href="/savings"
+          className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-foreground/10 dark:border-white/5 active:bg-surface-light transition-colors"
+        >
+          <div className="flex items-center gap-3 text-sm font-medium">
+            <div className="p-2 rounded-xl bg-teal-500/10 text-teal-500">
+              <PiggyBank size={18} />
+            </div>
+            <span>Target Tabungan & Celengan</span>
           </div>
         </Link>
       </div>

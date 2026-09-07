@@ -12,6 +12,7 @@ import {
   HandCoins,
   Target,
   AlertTriangle,
+  PiggyBank,
 } from 'lucide-react';
 import { getServiceRoleClient } from '@/lib/supabase';
 import { formatIDR, formatHolder } from '@/lib/utils';
@@ -24,11 +25,12 @@ export const revalidate = 0; // Real-time dashboard
 export default async function Home() {
   const supabase = getServiceRoleClient();
 
-  // Fetch all active transactions, unsettled loans, and categories
+  // Fetch all active transactions, unsettled loans, categories, and saving goals
   const [
     { data: transactions },
     { data: activeLoans },
     { data: categoriesData },
+    { data: savingGoalsData },
   ] = await Promise.all([
     supabase
       .from('transactions')
@@ -45,6 +47,10 @@ export default async function Home() {
       .from('categories')
       .select('*')
       .order('name'),
+    supabase
+      .from('saving_goals')
+      .select('*')
+      .is('deleted_at', null),
   ]);
 
   const totalReceivableUnpaid = (activeLoans || [])
@@ -143,6 +149,18 @@ export default async function Home() {
   const cashIstri = calculateHolderBalance('cash_istri', 'istri');
   const atmIstri = calculateHolderBalance('atm_istri');
 
+  // Savings metrics
+  const totalSavingsLocked = (savingGoalsData || []).reduce(
+    (sum: number, g: any) => sum + Number(g.current_amount || 0),
+    0
+  );
+  const safeToSpend = totalBalance - totalSavingsLocked;
+  const totalSavingsTarget = (savingGoalsData || []).reduce(
+    (sum: number, g: any) => sum + Number(g.target_amount || 0),
+    0
+  );
+  const activeGoalsCount = (savingGoalsData || []).length;
+
   const accounts = [
     { title: 'Cash Suami', amount: cashSuami, bgTint: 'bg-blue-500/10', icon: Banknote, iconColor: 'text-blue-500' },
     { title: 'ATM Suami', amount: atmSuami, bgTint: 'bg-indigo-500/10', icon: CreditCard, iconColor: 'text-indigo-500' },
@@ -157,7 +175,7 @@ export default async function Home() {
   return (
     <main className="min-h-screen p-5 pt-8 pb-28">
       {/* Header Total Balance */}
-      <header className="mb-6 flex justify-between items-center">
+      <header className="mb-6 flex justify-between items-start">
         <div>
           <h1 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-1">
             Total Saldo Rumah Tangga
@@ -165,6 +183,16 @@ export default async function Home() {
           <div className="text-3xl font-extrabold text-gradient tracking-tight">
             {formatIDR(totalBalance)}
           </div>
+          {totalSavingsLocked > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap text-xs">
+              <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                🟢 Bebas: {formatIDR(safeToSpend)}
+              </span>
+              <span className="inline-flex items-center gap-1 font-medium text-text-muted bg-surface-light px-2 py-0.5 rounded-lg border border-foreground/5">
+                🔒 Celengan: {formatIDR(totalSavingsLocked)}
+              </span>
+            </div>
+          )}
         </div>
         <div className="bg-surface-light p-3 rounded-2xl border border-foreground/10 dark:border-white/10 shadow-sm">
           <Wallet className="w-6 h-6 text-primary" />
@@ -243,6 +271,41 @@ export default async function Home() {
           </span>
         </Link>
       )}
+
+      {/* Celengan & Target Tabungan Widget */}
+      <Link
+        href="/savings"
+        className="glass-panel p-3.5 rounded-2xl mb-4 flex items-center justify-between border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 via-surface to-surface hover:border-emerald-500/40 transition-all group"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0 group-hover:scale-105 transition-transform">
+            <PiggyBank size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Target Tabungan & Celengan
+              </p>
+              {totalSavingsTarget > 0 && (
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/70 px-1.5 py-0.2 rounded-md">
+                  {Math.min(100, Math.round((totalSavingsLocked / totalSavingsTarget) * 100))}%
+                </span>
+              )}
+            </div>
+            <p className="text-xs font-black text-foreground truncate mt-0.5">
+              {formatIDR(totalSavingsLocked)}{' '}
+              <span className="font-medium text-text-muted">
+                {activeGoalsCount > 0
+                  ? `terkumpul • ${activeGoalsCount} celengan`
+                  : 'Mulai rencanakan tabungan impian'}
+              </span>
+            </p>
+          </div>
+        </div>
+        <span className="text-xs text-primary font-bold flex items-center gap-0.5 shrink-0 ml-2 group-hover:translate-x-0.5 transition-transform">
+          Buka <ChevronRight size={14} />
+        </span>
+      </Link>
 
       {/* Monthly Budget Summary Widget */}
       {totalMonthlyBudget > 0 && (

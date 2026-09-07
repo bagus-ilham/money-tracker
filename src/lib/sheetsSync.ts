@@ -32,12 +32,14 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
 
     const supabase = getServiceRoleClient();
 
-    // 1. Fetch Transactions, Loans, Loan Payments, and Categories
+    // 1. Fetch Transactions, Loans, Loan Payments, Categories, and Saving Goals
     const [
       { data: trxs, error: trxsErr },
       { data: loans, error: loansErr },
       { data: payments, error: paymentsErr },
       { data: categoriesList, error: catsErr },
+      { data: savingGoals, error: goalsErr },
+      { data: savingLogs, error: logsErr },
     ] = await Promise.all([
       supabase
         .from('transactions')
@@ -59,12 +61,24 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
         .from('categories')
         .select('*')
         .order('name'),
+      supabase
+        .from('saving_goals')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('saving_goal_logs')
+        .select('*, saving_goals(name), payment_methods(name)')
+        .is('deleted_at', null)
+        .order('log_date', { ascending: true })
+        .order('created_at', { ascending: true }),
     ]);
 
     if (trxsErr) throw trxsErr;
     if (loansErr) console.warn('Warning fetching loans:', loansErr);
     if (paymentsErr) console.warn('Warning fetching payments:', paymentsErr);
-    if (paymentsErr) console.warn('Warning fetching payments:', paymentsErr);
+    if (goalsErr) console.warn('Warning fetching saving goals:', goalsErr);
+    if (logsErr) console.warn('Warning fetching saving logs:', logsErr);
 
     const auth = new google.auth.GoogleAuth({
       credentials: {
@@ -90,12 +104,18 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
     let loansSheet = sheetList.find((s) => s.properties?.title === 'Hutang & Piutang');
     let loansSheetId = loansSheet?.properties?.sheetId;
 
+    let savingsSheet = sheetList.find((s) => s.properties?.title === 'Target Tabungan');
+    let savingsSheetId = savingsSheet?.properties?.sheetId;
+
     const addSheetRequests: any[] = [];
     if (!ringkasanSheet) {
       addSheetRequests.push({ addSheet: { properties: { title: 'Ringkasan' } } });
     }
     if (!loansSheet) {
       addSheetRequests.push({ addSheet: { properties: { title: 'Hutang & Piutang' } } });
+    }
+    if (!savingsSheet) {
+      addSheetRequests.push({ addSheet: { properties: { title: 'Target Tabungan' } } });
     }
 
     if (addSheetRequests.length > 0) {
@@ -108,6 +128,7 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
         const id = rep.addSheet?.properties?.sheetId;
         if (title === 'Ringkasan') ringkasanSheetId = id;
         if (title === 'Hutang & Piutang') loansSheetId = id;
+        if (title === 'Target Tabungan') savingsSheetId = id;
       });
     }
 
@@ -257,6 +278,11 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
         return [catName, spent, budget > 0 ? budget : '-', sisa, pct];
       });
 
+    const totalSavingsLocked = (savingGoals || []).reduce(
+      (sum: number, g: any) => sum + Number(g.current_amount || 0),
+      0
+    );
+
     const summaryValues: (string | number)[][] = [
       ['RINGKASAN SALDO DOMPET & REKENING', ''],
       ['Akun / Pemegang', 'Saldo Riil (Rp)'],
@@ -265,6 +291,8 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
       ['Cash Istri (Dompet Tunai)', cashIstri],
       ['ATM Istri (Rekening Bank)', atmIstri],
       ['TOTAL SALDO TERSEDIA', totalSaldo],
+      ['DANA TERKUNCI TABUNGAN (CELENGAN)', totalSavingsLocked],
+      ['SALDO BEBAS BELANJA (SAFE TO SPEND)', totalSaldo - totalSavingsLocked],
       ['', ''],
       ['STATUS HUTANG & PIUTANG', ''],
       ['Keterangan', 'Nominal (Rp)'],
@@ -413,7 +441,112 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
     });
 
     // ==========================================
-    // 6. Batch Format Requests (Styles, Colors, Column Resizing)
+    // 6. Prepare Saving Goals & Celengan Data (Target Tabungan)
+    // ==========================================
+    const savingRows: (string | number)[][] = [
+      ['TARGET TABUNGAN & CELENGAN IMPIAN KELUARGA', '', '', '', '', '', '', '', '', '', ''],
+      ['Terakhir Disinkronkan (WIB): ' + toWibDateTime(new Date().toISOString()), '', '', '', '', '', '', '', '', '', ''],
+      [
+        'No',
+        'Nama Target Celengan',
+        'Kategori',
+        'Pemilik',
+        'Terkumpul (Rp)',
+        'Target Nominal (Rp)',
+        'Sisa Kurang (Rp)',
+        '% Progress',
+        'Target Tanggal',
+        'Status',
+        'Catatan',
+      ],
+    ];
+
+    let totalTargetAll = 0;
+    let totalSavedAll = 0;
+
+    (savingGoals || []).forEach((g: any, idx: number) => {
+      const cur = Number(g.current_amount || 0);
+      const tgt = Number(g.target_amount || 0);
+      const sisa = Math.max(0, tgt - cur);
+      const pct = tgt > 0 ? `${Math.round((cur / tgt) * 100)}%` : '0%';
+      totalTargetAll += tgt;
+      totalSavedAll += cur;
+
+      savingRows.push([
+        idx + 1,
+        g.name,
+        g.category,
+        g.holder,
+        cur,
+        tgt,
+        sisa,
+        pct,
+        g.target_date || '-',
+        g.status === 'completed' || cur >= tgt ? 'TERCAPAI' : 'AKTIF',
+        g.notes || '-',
+      ]);
+    });
+
+    if ((savingGoals || []).length > 0) {
+      savingRows.push([
+        'TOTAL',
+        '',
+        '',
+        '',
+        totalSavedAll,
+        totalTargetAll,
+        Math.max(0, totalTargetAll - totalSavedAll),
+        totalTargetAll > 0 ? `${Math.round((totalSavedAll / totalTargetAll) * 100)}%` : '0%',
+        '',
+        '',
+        '',
+      ]);
+    }
+
+    savingRows.push(['', '', '', '', '', '', '', '', '', '', '']);
+    savingRows.push(['', '', '', '', '', '', '', '', '', '', '']);
+    savingRows.push(['LOG RIWAYAT MUTASI SETOR & TARIK TABUNGAN', '', '', '', '', '', '', '', '']);
+    savingRows.push([
+      'No',
+      'Tanggal Mutasi',
+      'Waktu Input (WIB)',
+      'Target Celengan',
+      'Jenis Mutasi',
+      'Nominal (Rp)',
+      'Pemilik',
+      'Rekening / Kas Terkait',
+      'Catatan',
+    ]);
+
+    (savingLogs || []).forEach((l: any, idx: number) => {
+      const jenisLabel = l.type === 'deposit' ? 'Setor Tabungan (+)' : 'Tarik Tabungan (-)';
+      savingRows.push([
+        idx + 1,
+        l.log_date,
+        toWibDateTime(l.created_at),
+        l.saving_goals?.name || '-',
+        jenisLabel,
+        Number(l.amount),
+        l.holder,
+        l.payment_methods?.name || '-',
+        l.notes || '-',
+      ]);
+    });
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: "'Target Tabungan'!A1:Z1000",
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "'Target Tabungan'!A1",
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: savingRows },
+    });
+
+    // ==========================================
+    // 7. Batch Format Requests (Styles, Colors, Column Resizing)
     // ==========================================
     const formatRequests: any[] = [
       // Freeze Header Row in Sheet1
@@ -595,6 +728,82 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
               dimension: 'COLUMNS',
               startIndex: 0,
               endIndex: 13,
+            },
+          },
+        }
+      );
+    }
+
+    // Format Target Tabungan sheet if ID is available
+    if (savingsSheetId !== undefined) {
+      formatRequests.push(
+        // Header Table Target Tabungan (Teal background)
+        {
+          repeatCell: {
+            range: {
+              sheetId: savingsSheetId,
+              startRowIndex: 2,
+              endRowIndex: 3,
+              startColumnIndex: 0,
+              endColumnIndex: 11,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.08, green: 0.45, blue: 0.4 },
+                textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 }, fontSize: 10 },
+                horizontalAlignment: 'CENTER',
+                verticalAlignment: 'MIDDLE',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)',
+          },
+        },
+        // Currency formatting for Terkumpul, Target, Sisa (Columns E, F, G -> idx 4, 5, 6)
+        {
+          repeatCell: {
+            range: {
+              sheetId: savingsSheetId,
+              startRowIndex: 3,
+              endRowIndex: Math.max((savingGoals || []).length + 5, 20),
+              startColumnIndex: 4,
+              endColumnIndex: 7,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: { type: 'NUMBER', pattern: '#,##0' },
+                horizontalAlignment: 'RIGHT',
+              },
+            },
+            fields: 'userEnteredFormat(numberFormat,horizontalAlignment)',
+          },
+        },
+        // Currency formatting for Mutasi Log Nominal (Column F -> idx 5)
+        {
+          repeatCell: {
+            range: {
+              sheetId: savingsSheetId,
+              startRowIndex: (savingGoals || []).length + 8,
+              endRowIndex: (savingGoals || []).length + (savingLogs || []).length + 15,
+              startColumnIndex: 5,
+              endColumnIndex: 6,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: { type: 'NUMBER', pattern: '#,##0' },
+                horizontalAlignment: 'RIGHT',
+              },
+            },
+            fields: 'userEnteredFormat(numberFormat,horizontalAlignment)',
+          },
+        },
+        // Auto resize columns in Target Tabungan
+        {
+          autoResizeDimensions: {
+            dimensions: {
+              sheetId: savingsSheetId,
+              dimension: 'COLUMNS',
+              startIndex: 0,
+              endIndex: 11,
             },
           },
         }

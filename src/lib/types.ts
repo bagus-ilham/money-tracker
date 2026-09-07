@@ -100,4 +100,35 @@ export interface LoanPayment {
   payment_methods?: { name: string } | null;
 }
 
+export type SavingGoalStatus = 'active' | 'completed' | 'paused';
+export type SavingGoalLogType = 'deposit' | 'withdraw';
 
+export interface SavingGoal {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date?: string | null;
+  category: string;
+  holder: string;
+  notes?: string | null;
+  status: SavingGoalStatus;
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+  saving_goal_logs?: SavingGoalLog[];
+}
+
+export interface SavingGoalLog {
+  id: string;
+  goal_id: string;
+  amount: number;
+  type: SavingGoalLogType;
+  holder: string;
+  payment_method_id?: string | null;
+  log_date: string;
+  notes?: string | null;
+  created_at?: string;
+  deleted_at?: string | null;
+  payment_methods?: { name: string } | null;
+}

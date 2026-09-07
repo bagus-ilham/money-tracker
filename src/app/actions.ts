@@ -483,4 +483,342 @@ export async function deleteLoanPayment(paymentId: string, loanId: string) {
   return { success: true };
 }
 
+// ----------------------------------------------------
+// SAVING GOALS & CELENGAN IMPIAN ACTIONS
+// ----------------------------------------------------
+
+export async function createSavingGoal(payload: {
+  name: string;
+  target_amount: number;
+  category: string;
+  holder: string;
+  target_date?: string | null;
+  notes?: string | null;
+  initial_amount?: number;
+  payment_method_id?: string | null;
+}) {
+  const supabase = getServiceRoleClient();
+  const initialAmount = Number(payload.initial_amount) || 0;
+
+  const { data: goal, error } = await supabase
+    .from('saving_goals')
+    .insert([
+      {
+        name: payload.name.trim(),
+        target_amount: Number(payload.target_amount),
+        current_amount: initialAmount,
+        category: payload.category || 'Lainnya',
+        holder: payload.holder || 'Bersama',
+        target_date: payload.target_date || null,
+        notes: payload.notes?.trim() || null,
+        status: initialAmount >= Number(payload.target_amount) ? 'completed' : 'active',
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating saving goal:', error);
+    return { success: false, error: error.message };
+  }
+
+  // If initial amount > 0, create a deposit log
+  if (initialAmount > 0 && goal) {
+    await supabase.from('saving_goal_logs').insert([
+      {
+        goal_id: goal.id,
+        amount: initialAmount,
+        type: 'deposit',
+        holder: payload.holder || 'Bersama',
+        payment_method_id: payload.payment_method_id || null,
+        log_date: new Date().toISOString().split('T')[0],
+        notes: 'Setoran Awal',
+      },
+    ]);
+  }
+
+  revalidatePath('/savings');
+  revalidatePath('/');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true, data: goal };
+}
+
+export async function updateSavingGoal(
+  id: string,
+  updates: {
+    name?: string;
+    target_amount?: number;
+    category?: string;
+    holder?: string;
+    target_date?: string | null;
+    notes?: string | null;
+    status?: 'active' | 'completed' | 'paused';
+  }
+) {
+  const supabase = getServiceRoleClient();
+  const updateData: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (updates.name !== undefined) updateData.name = updates.name.trim();
+  if (updates.target_amount !== undefined) updateData.target_amount = Number(updates.target_amount);
+  if (updates.category !== undefined) updateData.category = updates.category;
+  if (updates.holder !== undefined) updateData.holder = updates.holder;
+  if (updates.target_date !== undefined) updateData.target_date = updates.target_date || null;
+  if (updates.notes !== undefined) updateData.notes = updates.notes?.trim() || null;
+  if (updates.status !== undefined) updateData.status = updates.status;
+
+  const { error } = await supabase
+    .from('saving_goals')
+    .update(updateData)
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating saving goal:', error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/savings');
+  revalidatePath('/');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true };
+}
+
+export async function deleteSavingGoal(id: string) {
+  const supabase = getServiceRoleClient();
+  const now = new Date().toISOString();
+
+  // Soft delete goal
+  const { error } = await supabase
+    .from('saving_goals')
+    .update({ deleted_at: now })
+    .eq('id', id);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // Soft delete associated logs
+  await supabase
+    .from('saving_goal_logs')
+    .update({ deleted_at: now })
+    .eq('goal_id', id);
+
+  revalidatePath('/savings');
+  revalidatePath('/');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true };
+}
+
+export async function depositToSavingGoal(payload: {
+  goal_id: string;
+  amount: number;
+  holder: string;
+  payment_method_id?: string | null;
+  log_date?: string;
+  notes?: string | null;
+}) {
+  const supabase = getServiceRoleClient();
+  const depositAmount = Number(payload.amount);
+
+  if (depositAmount <= 0) {
+    return { success: false, error: 'Nominal setoran harus lebih dari 0' };
+  }
+
+  // Insert log
+  const { error: logError } = await supabase.from('saving_goal_logs').insert([
+    {
+      goal_id: payload.goal_id,
+      amount: depositAmount,
+      type: 'deposit',
+      holder: payload.holder || 'Bersama',
+      payment_method_id: payload.payment_method_id || null,
+      log_date: payload.log_date || new Date().toISOString().split('T')[0],
+      notes: payload.notes?.trim() || null,
+    },
+  ]);
+
+  if (logError) {
+    console.error('Error recording deposit log:', logError);
+    return { success: false, error: logError.message };
+  }
+
+  // Recalculate current amount from active logs
+  const { data: logs } = await supabase
+    .from('saving_goal_logs')
+    .select('amount, type')
+    .eq('goal_id', payload.goal_id)
+    .is('deleted_at', null);
+
+  const newCurrentAmount = (logs || []).reduce((acc, log) => {
+    return log.type === 'deposit' ? acc + Number(log.amount) : acc - Number(log.amount);
+  }, 0);
+
+  // Check goal target
+  const { data: goal } = await supabase
+    .from('saving_goals')
+    .select('target_amount, status')
+    .eq('id', payload.goal_id)
+    .single();
+
+  const newStatus =
+    goal && newCurrentAmount >= Number(goal.target_amount)
+      ? 'completed'
+      : goal?.status === 'completed'
+      ? 'active'
+      : goal?.status || 'active';
+
+  await supabase
+    .from('saving_goals')
+    .update({
+      current_amount: Math.max(0, newCurrentAmount),
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', payload.goal_id);
+
+  revalidatePath('/savings');
+  revalidatePath('/');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true };
+}
+
+export async function withdrawFromSavingGoal(payload: {
+  goal_id: string;
+  amount: number;
+  holder: string;
+  payment_method_id?: string | null;
+  log_date?: string;
+  notes?: string | null;
+}) {
+  const supabase = getServiceRoleClient();
+  const withdrawAmount = Number(payload.amount);
+
+  if (withdrawAmount <= 0) {
+    return { success: false, error: 'Nominal penarikan harus lebih dari 0' };
+  }
+
+  // Check current amount
+  const { data: currentGoal } = await supabase
+    .from('saving_goals')
+    .select('current_amount, target_amount')
+    .eq('id', payload.goal_id)
+    .single();
+
+  if (!currentGoal || Number(currentGoal.current_amount) < withdrawAmount) {
+    return { success: false, error: 'Saldo tabungan tidak mencukupi untuk penarikan ini' };
+  }
+
+  // Insert log
+  const { error: logError } = await supabase.from('saving_goal_logs').insert([
+    {
+      goal_id: payload.goal_id,
+      amount: withdrawAmount,
+      type: 'withdraw',
+      holder: payload.holder || 'Bersama',
+      payment_method_id: payload.payment_method_id || null,
+      log_date: payload.log_date || new Date().toISOString().split('T')[0],
+      notes: payload.notes?.trim() || null,
+    },
+  ]);
+
+  if (logError) {
+    console.error('Error recording withdraw log:', logError);
+    return { success: false, error: logError.message };
+  }
+
+  // Recalculate current amount from active logs
+  const { data: logs } = await supabase
+    .from('saving_goal_logs')
+    .select('amount, type')
+    .eq('goal_id', payload.goal_id)
+    .is('deleted_at', null);
+
+  const newCurrentAmount = (logs || []).reduce((acc, log) => {
+    return log.type === 'deposit' ? acc + Number(log.amount) : acc - Number(log.amount);
+  }, 0);
+
+  const newStatus =
+    newCurrentAmount >= Number(currentGoal.target_amount)
+      ? 'completed'
+      : 'active';
+
+  await supabase
+    .from('saving_goals')
+    .update({
+      current_amount: Math.max(0, newCurrentAmount),
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', payload.goal_id);
+
+  revalidatePath('/savings');
+  revalidatePath('/');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true };
+}
+
+export async function deleteSavingGoalLog(logId: string, goalId: string) {
+  const supabase = getServiceRoleClient();
+  const now = new Date().toISOString();
+
+  // Soft delete log
+  const { error } = await supabase
+    .from('saving_goal_logs')
+    .update({ deleted_at: now })
+    .eq('id', logId);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // Recalculate current amount
+  const { data: logs } = await supabase
+    .from('saving_goal_logs')
+    .select('amount, type')
+    .eq('goal_id', goalId)
+    .is('deleted_at', null);
+
+  const newCurrentAmount = (logs || []).reduce((acc, log) => {
+    return log.type === 'deposit' ? acc + Number(log.amount) : acc - Number(log.amount);
+  }, 0);
+
+  const { data: goal } = await supabase
+    .from('saving_goals')
+    .select('target_amount')
+    .eq('id', goalId)
+    .single();
+
+  const newStatus =
+    goal && newCurrentAmount >= Number(goal.target_amount)
+      ? 'completed'
+      : 'active';
+
+  await supabase
+    .from('saving_goals')
+    .update({
+      current_amount: Math.max(0, newCurrentAmount),
+      status: newStatus,
+      updated_at: now,
+    })
+    .eq('id', goalId);
+
+  revalidatePath('/savings');
+  revalidatePath('/');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true };
+}
+
 
