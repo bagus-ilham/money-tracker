@@ -32,11 +32,12 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
 
     const supabase = getServiceRoleClient();
 
-    // 1. Fetch Transactions, Loans, and Loan Payments
+    // 1. Fetch Transactions, Loans, Loan Payments, and Categories
     const [
       { data: trxs, error: trxsErr },
       { data: loans, error: loansErr },
       { data: payments, error: paymentsErr },
+      { data: categoriesList, error: catsErr },
     ] = await Promise.all([
       supabase
         .from('transactions')
@@ -54,10 +55,15 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
         .select('*, payment_methods(name), loans(person_name, type)')
         .is('deleted_at', null)
         .order('payment_date', { ascending: true }),
+      supabase
+        .from('categories')
+        .select('*')
+        .order('name'),
     ]);
 
     if (trxsErr) throw trxsErr;
     if (loansErr) console.warn('Warning fetching loans:', loansErr);
+    if (paymentsErr) console.warn('Warning fetching payments:', paymentsErr);
     if (paymentsErr) console.warn('Warning fetching payments:', paymentsErr);
 
     const auth = new google.auth.GoogleAuth({
@@ -241,6 +247,16 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
       }
     });
 
+    const categoryBudgetRows = Object.entries(catExpenseMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([catName, spent]) => {
+        const catObj = (categoriesList || []).find((c: any) => c.name === catName);
+        const budget = Number(catObj?.monthly_budget || 0);
+        const sisa = budget > 0 ? budget - spent : '-';
+        const pct = budget > 0 ? `${Math.round((spent / budget) * 100)}%` : '-';
+        return [catName, spent, budget > 0 ? budget : '-', sisa, pct];
+      });
+
     const summaryValues: (string | number)[][] = [
       ['RINGKASAN SALDO DOMPET & REKENING', ''],
       ['Akun / Pemegang', 'Saldo Riil (Rp)'],
@@ -257,11 +273,9 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
       ['SISA PIUTANG BELUM LUNAS (AKTIVA)', totalPiutangSisa],
       ['Total Hutang Kewajiban (Pasiva)', totalHutangSisa],
       ['', ''],
-      [`PENGELUARAN PER KATEGORI BULAN INI (${currentYearMonth})`, ''],
-      ['Kategori', 'Total Pengeluaran (Rp)'],
-      ...Object.entries(catExpenseMap)
-        .sort((a, b) => b[1] - a[1])
-        .map(([cat, amt]) => [cat, amt]),
+      [`PENGELUARAN & ANGGARAN PER KATEGORI BULAN INI (${currentYearMonth})`, '', '', '', ''],
+      ['Kategori', 'Realisasi (Rp)', 'Target Budget (Rp)', 'Sisa Budget (Rp)', '% Terpakai'],
+      ...categoryBudgetRows,
       ['', ''],
       ['HISTORI ARUS KAS BULANAN', '', '', '', ''],
       ['Bulan (YYYY-MM)', 'Total Masuk (Rp)', 'Total Keluar (Rp)', 'Termasuk Omzet Benangbaju (Rp)', 'Net Arus Kas (Rp)'],

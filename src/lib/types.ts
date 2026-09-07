@@ -9,6 +9,7 @@ export interface Category {
   name: string;
   type: 'income' | 'expense';
   icon?: string | null;
+  monthly_budget?: number | null;
   created_at?: string;
 }
 

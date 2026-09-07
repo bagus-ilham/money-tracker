@@ -10,6 +10,8 @@ import {
   TrendingDown,
   TrendingUp,
   HandCoins,
+  Target,
+  AlertTriangle,
 } from 'lucide-react';
 import { getServiceRoleClient } from '@/lib/supabase';
 import { formatIDR, formatHolder } from '@/lib/utils';
@@ -22,20 +24,28 @@ export const revalidate = 0; // Real-time dashboard
 export default async function Home() {
   const supabase = getServiceRoleClient();
 
-  // Fetch all active transactions
-  const { data: transactions } = await supabase
-    .from('transactions')
-    .select('*, categories(name), payment_methods(name)')
-    .is('deleted_at', null)
-    .order('trx_date', { ascending: false })
-    .order('created_at', { ascending: false });
-
-  // Fetch active unsettled loans
-  const { data: activeLoans } = await supabase
-    .from('loans')
-    .select('*')
-    .is('deleted_at', null)
-    .neq('status', 'paid');
+  // Fetch all active transactions, unsettled loans, and categories
+  const [
+    { data: transactions },
+    { data: activeLoans },
+    { data: categoriesData },
+  ] = await Promise.all([
+    supabase
+      .from('transactions')
+      .select('*, categories(name), payment_methods(name)')
+      .is('deleted_at', null)
+      .order('trx_date', { ascending: false })
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('loans')
+      .select('*')
+      .is('deleted_at', null)
+      .neq('status', 'paid'),
+    supabase
+      .from('categories')
+      .select('*')
+      .order('name'),
+  ]);
 
   const totalReceivableUnpaid = (activeLoans || [])
     .filter((l: any) => l.type === 'receivable')
@@ -78,6 +88,35 @@ export default async function Home() {
   const categoryExpenses: CategoryExpenseItem[] = Object.entries(categoryExpenseMap)
     .map(([name, amount]) => ({ name, amount }))
     .sort((a, b) => b.amount - a.amount);
+
+  // Calculate Monthly Budgeting Stats for Home Widget
+  const expenseCategoriesWithBudget = (categoriesData || []).filter(
+    (c: any) => c.type === 'expense' && c.name !== 'Pinjaman' && Number(c.monthly_budget || 0) > 0
+  );
+
+  const totalMonthlyBudget = expenseCategoriesWithBudget.reduce(
+    (sum: number, c: any) => sum + Number(c.monthly_budget || 0),
+    0
+  );
+
+  const overbudgetCategories: Array<{ name: string; amount: number; budget: number; excess: number }> = [];
+
+  expenseCategoriesWithBudget.forEach((c: any) => {
+    const spent = categoryExpenseMap[c.name] || 0;
+    const b = Number(c.monthly_budget || 0);
+    if (spent > b) {
+      overbudgetCategories.push({
+        name: c.name,
+        amount: spent,
+        budget: b,
+        excess: spent - b,
+      });
+    }
+  });
+
+  const overallBudgetPct =
+    totalMonthlyBudget > 0 ? Math.round((totalExpenseThisMonth / totalMonthlyBudget) * 100) : 0;
+  const remainingTotalBudget = totalMonthlyBudget - totalExpenseThisMonth;
 
   // Helper to calculate balance per holder account key
   const calculateHolderBalance = (key: string, legacyKey?: string) => {
@@ -168,9 +207,11 @@ export default async function Home() {
               <div
                 className={`absolute top-0 right-0 w-16 h-16 ${acc.bgTint} rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110`}
               />
-              <div className="flex items-center justify-between mb-2 relative z-10">
-                <h2 className="text-xs text-text-muted font-medium">{acc.title}</h2>
-                <Icon className={`w-4 h-4 ${acc.iconColor}`} />
+              <div className="flex items-center gap-2 mb-2 relative z-10">
+                <div className={`p-1.5 rounded-lg ${acc.bgTint}`}>
+                  <Icon size={16} className={acc.iconColor} />
+                </div>
+                <span className="text-xs font-medium text-text-muted">{acc.title}</span>
               </div>
               <p className="text-base font-bold text-foreground relative z-10">{formatIDR(acc.amount)}</p>
             </div>
@@ -182,7 +223,7 @@ export default async function Home() {
       {totalReceivableUnpaid > 0 && (
         <Link
           href="/loans"
-          className="glass-panel p-3.5 rounded-2xl mb-6 flex items-center justify-between border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-surface to-surface hover:border-amber-500/40 transition-all group"
+          className="glass-panel p-3.5 rounded-2xl mb-4 flex items-center justify-between border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-surface to-surface hover:border-amber-500/40 transition-all group"
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
@@ -200,6 +241,76 @@ export default async function Home() {
           <span className="text-xs text-primary font-bold flex items-center gap-0.5 shrink-0 ml-2">
             Lihat <ChevronRight size={14} />
           </span>
+        </Link>
+      )}
+
+      {/* Monthly Budget Summary Widget */}
+      {totalMonthlyBudget > 0 && (
+        <Link
+          href="/categories"
+          className="glass-panel p-4 rounded-2xl mb-6 block border border-foreground/10 dark:border-white/10 hover:border-primary/40 transition-all group"
+        >
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                <Target size={16} />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
+                Anggaran Belanja ({monthName})
+              </span>
+            </div>
+            <span className="text-xs text-primary font-bold flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+              Kelola <ChevronRight size={14} />
+            </span>
+          </div>
+
+          <div className="flex items-baseline justify-between mb-2">
+            <div>
+              <span className="text-lg font-extrabold text-foreground">
+                {formatIDR(totalExpenseThisMonth)}
+              </span>
+              <span className="text-xs text-text-muted font-medium ml-1">
+                / {formatIDR(totalMonthlyBudget)}
+              </span>
+            </div>
+            <span
+              className={`text-xs font-extrabold px-2 py-0.5 rounded-lg ${
+                overallBudgetPct >= 100
+                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                  : overallBudgetPct >= 75
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                  : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              {overallBudgetPct}%
+            </span>
+          </div>
+
+          <div className="w-full bg-surface-light h-2 rounded-full overflow-hidden mb-2">
+            <div
+              className={`h-full transition-all duration-500 rounded-full ${
+                overallBudgetPct >= 100
+                  ? 'bg-rose-500'
+                  : overallBudgetPct >= 75
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500'
+              }`}
+              style={{ width: `${Math.min(100, overallBudgetPct)}%` }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-text-muted">
+              {remainingTotalBudget >= 0
+                ? `Sisa Anggaran: ${formatIDR(remainingTotalBudget)}`
+                : `Overbudget: +${formatIDR(Math.abs(remainingTotalBudget))}`}
+            </span>
+            {overbudgetCategories.length > 0 && (
+              <span className="text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1">
+                <AlertTriangle size={12} /> {overbudgetCategories.length} Kategori Melebihi Limit
+              </span>
+            )}
+          </div>
         </Link>
       )}
 

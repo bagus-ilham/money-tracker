@@ -21,10 +21,14 @@ import {
   DollarSign,
   ArrowDownRight,
   ArrowUpRight,
+  Target,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { addCategory, updateCategory, deleteCategory } from '@/app/actions';
+import { addCategory, updateCategory, deleteCategory, setCategoryBudget } from '@/app/actions';
 import { useToast } from '@/components/Toast';
+import CurrencyInput from '@/components/CurrencyInput';
 import {
   Category,
   Transaction,
@@ -81,10 +85,16 @@ export default function Categories() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense');
+  const [newCatBudget, setNewCatBudget] = useState<number>(0);
 
   // Edit modal state
   const [editCategory, setEditCategory] = useState<Category | null>(null);
   const [editCatName, setEditCatName] = useState('');
+  const [editCatBudget, setEditCatBudget] = useState<number>(0);
+
+  // Quick Set Budget modal state
+  const [budgetModalCategory, setBudgetModalCategory] = useState<Category | null>(null);
+  const [budgetInputAmount, setBudgetInputAmount] = useState<number>(0);
 
   // Delete modal state
   const [deleteCategoryItem, setDeleteCategoryItem] = useState<Category | null>(null);
@@ -199,6 +209,44 @@ export default function Categories() {
     return { list, totalAmount };
   }, [filteredTrxs, viewType]);
 
+  // Overall Household Budget Statistics for Expense Categories
+  const overallBudgetStats = useMemo(() => {
+    const expenseCategoriesWithBudget = categories.filter(
+      (c) => c.type === 'expense' && c.name !== 'Pinjaman' && Number(c.monthly_budget || 0) > 0
+    );
+    const totalBudget = expenseCategoriesWithBudget.reduce(
+      (sum, c) => sum + Number(c.monthly_budget || 0),
+      0
+    );
+
+    let budgetedExpense = 0;
+    let overbudgetCount = 0;
+
+    categoryStats.list.forEach((cat) => {
+      const catObj = categories.find((c) => c.id === cat.id);
+      const budget = Number(catObj?.monthly_budget || 0);
+      if (budget > 0) {
+        budgetedExpense += cat.amount;
+        if (cat.amount > budget) overbudgetCount++;
+      }
+    });
+
+    const totalExpense = categoryStats.totalAmount;
+    const overallPct = totalBudget > 0 ? Math.round((totalExpense / totalBudget) * 100) : 0;
+    const remainingBudget = totalBudget - totalExpense;
+
+    return {
+      totalBudget,
+      totalExpense,
+      budgetedExpense,
+      overallPct,
+      remainingBudget,
+      overbudgetCount,
+      hasBudgetSet: totalBudget > 0,
+      budgetedCategoriesCount: expenseCategoriesWithBudget.length,
+    };
+  }, [categories, categoryStats]);
+
   // Donut chart calculations (pure computation, no variable mutation during render)
   const chartSegments = useMemo(() => {
     const { list, totalAmount } = categoryStats;
@@ -226,18 +274,42 @@ export default function Categories() {
     });
   }, [categoryStats]);
 
-  // Handlers for Category CRUD
+  // Handlers for Category CRUD & Budgeting
+  const openBudgetModal = (category: Category) => {
+    setBudgetModalCategory(category);
+    setBudgetInputAmount(Number(category.monthly_budget || 0));
+  };
+
+  const handleSaveBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!budgetModalCategory) return;
+
+    setIsSubmitting(true);
+    const result = await setCategoryBudget(budgetModalCategory.id, budgetInputAmount);
+
+    if (result.success) {
+      await fetchData();
+      setBudgetModalCategory(null);
+      showToast(`Anggaran "${budgetModalCategory.name}" berhasil disimpan`, 'success');
+    } else {
+      showToast('Gagal menyimpan anggaran: ' + (result.error || 'Terjadi kesalahan'), 'error');
+    }
+    setIsSubmitting(false);
+  };
+
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
 
     setIsSubmitting(true);
-    const result = await addCategory(newCatName.trim(), newCatType);
+    const budgetVal = newCatType === 'expense' ? newCatBudget : 0;
+    const result = await addCategory(newCatName.trim(), newCatType, budgetVal);
 
     if (result.success && result.data) {
       setCategories([...categories, result.data as Category]);
       setShowAddModal(false);
       setNewCatName('');
+      setNewCatBudget(0);
       showToast('Kategori berhasil ditambahkan', 'success');
     } else {
       showToast('Gagal menambahkan kategori: ' + (result.error || 'Terjadi kesalahan'), 'error');
@@ -250,12 +322,14 @@ export default function Categories() {
     if (!editCategory || !editCatName.trim()) return;
 
     setIsSubmitting(true);
-    const result = await updateCategory(editCategory.id, editCatName.trim());
+    const budgetVal = editCategory.type === 'expense' ? editCatBudget : 0;
+    const result = await updateCategory(editCategory.id, editCatName.trim(), budgetVal);
 
     if (result.success) {
       await fetchData();
       setEditCategory(null);
       setEditCatName('');
+      setEditCatBudget(0);
       showToast('Kategori berhasil diperbarui & disinkronkan', 'success');
     } else {
       showToast('Gagal memperbarui kategori: ' + (result.error || 'Terjadi kesalahan'), 'error');
@@ -517,6 +591,105 @@ export default function Categories() {
             </button>
           </div>
 
+          {/* Overall Budgeting Card (when viewing Expenses) */}
+          {viewType === 'expense' && (
+            <div className="glass-panel p-4 rounded-3xl mb-4 border border-foreground/10 dark:border-white/10 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                    <Target size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-text-muted">
+                      Anggaran Belanja Bulanan
+                    </h3>
+                    <p className="text-[11px] text-text-muted">
+                      {overallBudgetStats.hasBudgetSet
+                        ? `${overallBudgetStats.budgetedCategoriesCount} Kategori Diberi Batas Anggaran`
+                        : 'Belum ada target anggaran bulanan'}
+                    </p>
+                  </div>
+                </div>
+
+                {overallBudgetStats.hasBudgetSet && (
+                  <span
+                    className={`text-[11px] font-extrabold px-2.5 py-1 rounded-xl ${
+                      overallBudgetStats.overallPct >= 100
+                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                        : overallBudgetStats.overallPct >= 75
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                        : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                    }`}
+                  >
+                    {overallBudgetStats.overallPct}% Terpakai
+                  </span>
+                )}
+              </div>
+
+              {overallBudgetStats.hasBudgetSet ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2 p-2.5 rounded-2xl bg-surface-light/50 border border-foreground/5 dark:border-white/5 text-center">
+                    <div>
+                      <p className="text-[10px] text-text-muted">Target Budget</p>
+                      <p className="text-xs font-bold text-foreground mt-0.5 truncate">
+                        {formatIDR(overallBudgetStats.totalBudget)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-text-muted">Realisasi Belanja</p>
+                      <p className="text-xs font-bold text-expense mt-0.5 truncate">
+                        {formatIDR(overallBudgetStats.totalExpense)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-text-muted">
+                        {overallBudgetStats.remainingBudget >= 0 ? 'Sisa Anggaran' : 'Overbudget'}
+                      </p>
+                      <p
+                        className={`text-xs font-bold mt-0.5 truncate ${
+                          overallBudgetStats.remainingBudget >= 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {formatIDR(Math.abs(overallBudgetStats.remainingBudget))}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Overall Progress Bar */}
+                  <div className="w-full bg-surface-light h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${
+                        overallBudgetStats.overallPct >= 100
+                          ? 'bg-rose-500'
+                          : overallBudgetStats.overallPct >= 75
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(100, overallBudgetStats.overallPct)}%` }}
+                    />
+                  </div>
+
+                  {/* Overbudget Alert if any */}
+                  {overallBudgetStats.overbudgetCount > 0 && (
+                    <div className="flex items-center gap-2 p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-600 dark:text-rose-400 text-xs font-medium">
+                      <AlertTriangle size={15} className="shrink-0" />
+                      <span>
+                        Perhatian: Terdapat <strong>{overallBudgetStats.overbudgetCount} kategori</strong> yang telah melebihi batas anggaran!
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 bg-surface-light/40 rounded-xl text-xs text-text-muted flex items-center justify-between">
+                  <span>Tetapkan batas belanja pada kategori agar pengeluaran terkontrol.</span>
+                  <span className="text-primary font-bold">Atur di bawah ↓</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Donut Chart & Category Breakdown Card */}
           <div className="glass-panel p-5 rounded-3xl">
             <div className="flex items-center justify-between mb-4">
@@ -586,11 +759,24 @@ export default function Categories() {
 
                   {categoryStats.list.map((cat, idx) => {
                     const isExpanded = expandedCategoryId === cat.id;
+                    const categoryObj = categories.find((c) => c.id === cat.id);
+                    const monthlyBudget = Number(categoryObj?.monthly_budget || 0);
+                    const hasBudget = monthlyBudget > 0;
+                    const budgetPct = hasBudget ? Math.round((cat.amount / monthlyBudget) * 100) : 0;
+                    const remaining = monthlyBudget - cat.amount;
+                    const isOverbudget = hasBudget && remaining < 0;
+                    const isWarning = hasBudget && !isOverbudget && budgetPct >= 75;
 
                     return (
                       <div
                         key={cat.id}
-                        className="rounded-2xl border border-foreground/10 dark:border-white/5 bg-surface hover:border-foreground/20 dark:hover:border-white/10 transition-all overflow-hidden"
+                        className={`rounded-2xl border bg-surface transition-all overflow-hidden ${
+                          isOverbudget
+                            ? 'border-rose-500/40 dark:border-rose-500/30'
+                            : isWarning
+                            ? 'border-amber-500/40 dark:border-amber-500/30'
+                            : 'border-foreground/10 dark:border-white/5 hover:border-foreground/20 dark:hover:border-white/10'
+                        }`}
                       >
                         {/* Header Item */}
                         <div
@@ -608,6 +794,11 @@ export default function Categories() {
                                 <span className="text-[10px] text-text-muted font-semibold shrink-0">
                                   #{idx + 1}
                                 </span>
+                                {isOverbudget && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-extrabold rounded-md bg-rose-500/15 text-rose-600 dark:text-rose-400 shrink-0">
+                                    OVERBUDGET
+                                  </span>
+                                )}
                               </div>
                               <p className="text-[10px] text-text-muted mt-0.5">
                                 {cat.count} Transaksi • {Math.round(cat.percentage)}%
@@ -620,6 +811,11 @@ export default function Categories() {
                               <p className="font-extrabold text-xs text-foreground">
                                 {formatIDR(cat.amount)}
                               </p>
+                              {viewType === 'expense' && hasBudget && (
+                                <p className="text-[10px] text-text-muted mt-0.5">
+                                  dari {formatIDR(monthlyBudget)}
+                                </p>
+                              )}
                             </div>
                             <div className="text-text-muted p-1 rounded-lg">
                               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -627,16 +823,89 @@ export default function Categories() {
                           </div>
                         </div>
 
-                        {/* Progress bar visual under item */}
-                        <div className="w-full bg-surface-light h-1">
-                          <div
-                            className="h-full transition-all duration-500"
-                            style={{
-                              width: `${cat.percentage}%`,
-                              backgroundColor: cat.color,
-                            }}
-                          />
-                        </div>
+                        {/* Budget Status and Bar for Expense */}
+                        {viewType === 'expense' && (
+                          <div className="px-3.5 pb-3 pt-0">
+                            {hasBudget ? (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      className={`font-extrabold ${
+                                        isOverbudget
+                                          ? 'text-rose-600 dark:text-rose-400'
+                                          : isWarning
+                                          ? 'text-amber-600 dark:text-amber-400'
+                                          : 'text-emerald-600 dark:text-emerald-400'
+                                      }`}
+                                    >
+                                      {budgetPct}%
+                                    </span>
+                                    <span className="text-text-muted">
+                                      {isOverbudget
+                                        ? `(Over +${formatIDR(Math.abs(remaining))})`
+                                        : `(Sisa ${formatIDR(remaining)})`}
+                                    </span>
+                                  </div>
+                                  {categoryObj && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openBudgetModal(categoryObj);
+                                      }}
+                                      className="text-text-muted hover:text-primary transition-colors flex items-center gap-1 font-medium text-[10px]"
+                                    >
+                                      <Edit2 size={11} /> Ubah Budget
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="w-full bg-surface-light h-2 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-500 rounded-full ${
+                                      isOverbudget
+                                        ? 'bg-rose-500'
+                                        : isWarning
+                                        ? 'bg-amber-500'
+                                        : 'bg-emerald-500'
+                                    }`}
+                                    style={{ width: `${Math.min(100, budgetPct)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between text-[10px] text-text-muted pt-1">
+                                <span>Belum ada batas anggaran</span>
+                                {categoryObj && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openBudgetModal(categoryObj);
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-bold transition-colors flex items-center gap-1"
+                                  >
+                                    <Plus size={11} /> Atur Budget
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Normal Category Distribution bar for Income */}
+                        {viewType === 'income' && (
+                          <div className="w-full bg-surface-light h-1">
+                            <div
+                              className="h-full transition-all duration-500"
+                              style={{
+                                width: `${cat.percentage}%`,
+                                backgroundColor: cat.color,
+                              }}
+                            />
+                          </div>
+                        )}
 
                         {/* Accordion Content: List of Transactions */}
                         {isExpanded && (
@@ -740,36 +1009,63 @@ export default function Categories() {
                   Belum ada kategori pengeluaran.
                 </div>
               ) : (
-                expenses.map((cat) => (
-                  <div
-                    key={cat.id}
-                    className="p-4 flex items-center justify-between hover:bg-foreground/5 dark:hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Tag size={15} className="text-expense" />
-                      <span className="text-sm font-medium">{cat.name}</span>
+                expenses.map((cat) => {
+                  const budgetVal = Number(cat.monthly_budget || 0);
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className="p-4 flex items-center justify-between hover:bg-foreground/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <div className="min-w-0 pr-3">
+                        <div className="flex items-center gap-2.5">
+                          <Tag size={15} className="text-expense shrink-0" />
+                          <span className="text-sm font-medium truncate">{cat.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 ml-6">
+                          {budgetVal > 0 ? (
+                            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                              Target: {formatIDR(budgetVal)} / bln
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-text-muted">
+                              Tanpa batas anggaran
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => openBudgetModal(cat)}
+                          className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center gap-1"
+                          title="Atur Anggaran"
+                        >
+                          <Target size={14} />
+                          <span className="hidden sm:inline">Anggaran</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditCategory(cat);
+                            setEditCatName(cat.name);
+                            setEditCatBudget(Number(cat.monthly_budget || 0));
+                          }}
+                          className="p-2 text-text-muted hover:text-foreground rounded-lg hover:bg-foreground/5 dark:hover:bg-white/10 transition-colors"
+                          title="Edit Kategori"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteCategoryItem(cat)}
+                          className="p-2 text-expense/70 hover:text-expense rounded-lg hover:bg-expense/10 transition-colors"
+                          title="Hapus Kategori"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setEditCategory(cat);
-                          setEditCatName(cat.name);
-                        }}
-                        className="p-2 text-text-muted hover:text-foreground rounded-lg hover:bg-foreground/5 dark:hover:bg-white/10 transition-colors"
-                        title="Edit Kategori"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => setDeleteCategoryItem(cat)}
-                        className="p-2 text-expense/70 hover:text-expense rounded-lg hover:bg-expense/10 transition-colors"
-                        title="Hapus Kategori"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>
@@ -784,6 +1080,91 @@ export default function Categories() {
         onSelectFilter={(newFilter) => setDateFilter(newFilter)}
         salaryCycles={salaryCycles}
       />
+
+      {/* Quick Set Budget Modal */}
+      {budgetModalCategory && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 pb-safe-area bg-black/60 backdrop-blur-sm transition-opacity">
+          <div className="w-full max-w-md bg-surface border border-foreground/10 dark:border-white/10 rounded-3xl p-6 shadow-2xl relative animate-in slide-in-from-bottom-10">
+            <button
+              onClick={() => setBudgetModalCategory(null)}
+              className="absolute top-5 right-5 p-2 bg-surface-light rounded-full text-text-muted hover:text-foreground"
+            >
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="p-2 rounded-xl bg-primary/15 text-primary">
+                <Target size={18} />
+              </div>
+              <h2 className="text-lg font-bold">Atur Batas Anggaran</h2>
+            </div>
+            <p className="text-xs text-text-muted mb-5">
+              Tentukan target batas belanja bulanan untuk kategori{' '}
+              <strong className="text-foreground">{budgetModalCategory.name}</strong>.
+            </p>
+
+            <form onSubmit={handleSaveBudget} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">
+                  Batas Anggaran Bulanan (Rp)
+                </label>
+                <CurrencyInput
+                  value={budgetInputAmount}
+                  onChange={(val) => setBudgetInputAmount(val)}
+                  placeholder="0"
+                  autoFocus
+                />
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <span className="text-[10px] text-text-muted w-full font-medium mb-0.5">Preset Cepat:</span>
+                {[200000, 500000, 1000000, 1500000, 2000000].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setBudgetInputAmount(preset)}
+                    className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                      budgetInputAmount === preset
+                        ? 'bg-primary text-white border-primary font-bold shadow-sm'
+                        : 'bg-surface-light border-foreground/10 dark:border-white/10 text-text-muted hover:text-foreground'
+                    }`}
+                  >
+                    {formatIDR(preset)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setBudgetInputAmount(0)}
+                  className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                    budgetInputAmount === 0
+                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-600 dark:text-rose-400 font-bold'
+                      : 'bg-surface-light border-foreground/10 dark:border-white/10 text-text-muted hover:text-foreground'
+                  }`}
+                >
+                  Hapus Anggaran (Rp 0)
+                </button>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50 flex justify-center items-center gap-2 shadow-lg shadow-primary/20 active:scale-[0.99]"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} />
+                      Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Anggaran & Sync'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add Category Modal */}
       {showAddModal && (
@@ -839,6 +1220,19 @@ export default function Categories() {
                 />
               </div>
 
+              {newCatType === 'expense' && (
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1.5">
+                    Target Anggaran Bulanan (Opsional)
+                  </label>
+                  <CurrencyInput
+                    value={newCatBudget}
+                    onChange={(val) => setNewCatBudget(val)}
+                    placeholder="0 (Tanpa batas)"
+                  />
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -875,6 +1269,19 @@ export default function Categories() {
                   autoFocus
                 />
               </div>
+
+              {editCategory.type === 'expense' && (
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1.5">
+                    Target Anggaran Bulanan (Rp)
+                  </label>
+                  <CurrencyInput
+                    value={editCatBudget}
+                    onChange={(val) => setEditCatBudget(val)}
+                    placeholder="0 (Tanpa batas)"
+                  />
+                </div>
+              )}
 
               <button
                 type="submit"

@@ -4,11 +4,11 @@ import { getServiceRoleClient } from '@/lib/supabase';
 import { resyncGoogleSheets } from '@/lib/sheetsSync';
 import { revalidatePath } from 'next/cache';
 
-export async function addCategory(name: string, type: 'income' | 'expense') {
+export async function addCategory(name: string, type: 'income' | 'expense', monthly_budget: number = 0) {
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase
     .from('categories')
-    .insert([{ name, type }])
+    .insert([{ name, type, monthly_budget: Number(monthly_budget) || 0 }])
     .select()
     .single();
 
@@ -18,14 +18,20 @@ export async function addCategory(name: string, type: 'income' | 'expense') {
   }
 
   revalidatePath('/categories');
+  revalidatePath('/');
   return { success: true, data };
 }
 
-export async function updateCategory(id: string, name: string) {
+export async function updateCategory(id: string, name: string, monthly_budget?: number) {
   const supabase = getServiceRoleClient();
+  const updatePayload: Record<string, any> = { name };
+  if (monthly_budget !== undefined) {
+    updatePayload.monthly_budget = Number(monthly_budget) || 0;
+  }
+
   const { data, error } = await supabase
     .from('categories')
-    .update({ name })
+    .update(updatePayload)
     .eq('id', id)
     .select();
 
@@ -39,6 +45,28 @@ export async function updateCategory(id: string, name: string) {
 
   revalidatePath('/categories');
   revalidatePath('/history');
+  revalidatePath('/');
+  return { success: true, data };
+}
+
+export async function setCategoryBudget(id: string, monthly_budget: number) {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from('categories')
+    .update({ monthly_budget: Math.max(0, Number(monthly_budget) || 0) })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error setting category budget:', error);
+    return { success: false, error: error.message };
+  }
+
+  // Resync to Google Sheets so Ringkasan reflects updated budget
+  await resyncGoogleSheets();
+
+  revalidatePath('/categories');
   revalidatePath('/');
   return { success: true, data };
 }
