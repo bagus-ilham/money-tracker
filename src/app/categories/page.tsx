@@ -38,6 +38,7 @@ import {
   calculateSalaryCycleStats,
   getPresetDateRange,
   isDateWithinRange,
+  isLoanTransaction,
 } from '@/lib/salaryCycle';
 import DateRangeModal from '@/components/DateRangeModal';
 
@@ -122,16 +123,16 @@ export default function Categories() {
     });
   }, [transactions, dateFilter]);
 
-  // Financial Stats for selected period
+  // Financial Stats for selected period (living expenses and earned income only)
   const totalIncomeInPeriod = useMemo(() => {
     return filteredTrxs
-      .filter((t) => t.type === 'income')
+      .filter((t) => t.type === 'income' && !isLoanTransaction(t))
       .reduce((sum, t) => sum + Number(t.amount), 0);
   }, [filteredTrxs]);
 
   const totalExpenseInPeriod = useMemo(() => {
     return filteredTrxs
-      .filter((t) => t.type === 'expense')
+      .filter((t) => t.type === 'expense' && !isLoanTransaction(t))
       .reduce((sum, t) => sum + Number(t.amount), 0);
   }, [filteredTrxs]);
 
@@ -149,9 +150,11 @@ export default function Categories() {
     return calculateSalaryCycleStats(currentCycle, transactions);
   }, [dateFilter, salaryCycles, transactions]);
 
-  // Aggregate by Category for the selected viewType (expense or income)
+  // Aggregate by Category for the selected viewType (excluding loan disbursements/repayments)
   const categoryStats = useMemo(() => {
-    const relevantTrxs = filteredTrxs.filter((t) => t.type === viewType);
+    const relevantTrxs = filteredTrxs.filter(
+      (t) => t.type === viewType && !isLoanTransaction(t)
+    );
     const totalAmount = relevantTrxs.reduce((sum, t) => sum + Number(t.amount), 0);
 
     const map: Record<

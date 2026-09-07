@@ -65,6 +65,20 @@ export function isDateWithinRange(dateStr: string, startDate?: string, endDate?:
 }
 
 /**
+ * Check if a transaction is a loan disbursement or repayment (non-living cost/non-earned income)
+ */
+export function isLoanTransaction(t: Transaction): boolean {
+  const catName = t.categories?.name?.toLowerCase() || '';
+  const desc = t.description?.toLowerCase() || '';
+  return (
+    catName.includes('pinjam') ||
+    catName.includes('pelunasan piutang') ||
+    desc.includes('[piutang]') ||
+    desc.includes('[hutang]')
+  );
+}
+
+/**
  * Detect salary cycles from transactions list
  */
 export function detectSalaryCycles(transactions: Transaction[]): SalaryCyclePeriod[] {
@@ -159,9 +173,12 @@ export function calculateSalaryCycleStats(
 ): SalaryCycleStats {
   const today = getTodayString();
 
-  // Find all expenses within the cycle range
+  // Find all living expenses within the cycle range (excluding loans given out)
   const cycleExpenses = transactions.filter(
-    (t) => t.type === 'expense' && isDateWithinRange(t.trx_date, cycle.startDate, cycle.endDate)
+    (t) =>
+      t.type === 'expense' &&
+      !isLoanTransaction(t) &&
+      isDateWithinRange(t.trx_date, cycle.startDate, cycle.endDate)
   );
 
   const totalExpense = cycleExpenses.reduce((sum, t) => sum + Number(t.amount), 0);

@@ -34,6 +34,7 @@ import {
   detectSalaryCycles,
   isDateWithinRange,
   getPresetDateRange,
+  isLoanTransaction,
 } from '@/lib/salaryCycle';
 import DateRangeModal from '@/components/DateRangeModal';
 
@@ -151,13 +152,13 @@ export default function History() {
     });
   }, [transactions, activeFilter, dateFilter, holderFilter, categoryFilter, searchQuery]);
 
-  // Mini summary of filtered transactions
+  // Mini summary of filtered transactions (living expenses and earned income)
   const summaryStats = useMemo(() => {
     const totalIncome = filteredTransactions
-      .filter((t) => t.type === 'income')
+      .filter((t) => t.type === 'income' && !isLoanTransaction(t))
       .reduce((s, t) => s + Number(t.amount), 0);
     const totalExpense = filteredTransactions
-      .filter((t) => t.type === 'expense')
+      .filter((t) => t.type === 'expense' && !isLoanTransaction(t))
       .reduce((s, t) => s + Number(t.amount), 0);
     return { totalIncome, totalExpense };
   }, [filteredTransactions]);
@@ -486,9 +487,16 @@ export default function History() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-semibold text-sm truncate">
-                    {trx.type === 'transfer' ? 'Transfer' : trx.categories?.name || 'Lainnya'}
-                  </p>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className="font-semibold text-sm truncate">
+                      {trx.type === 'transfer' ? 'Transfer' : trx.categories?.name || 'Lainnya'}
+                    </p>
+                    {isLoanTransaction(trx) && (
+                      <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
+                        Pinjaman
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-text-muted truncate mt-0.5">
                     {trx.trx_date}
                     {trx.payment_methods?.name ? ` • ${trx.payment_methods.name}` : ''}

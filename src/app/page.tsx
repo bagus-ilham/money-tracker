@@ -14,6 +14,7 @@ import {
 import { getServiceRoleClient } from '@/lib/supabase';
 import { formatIDR, formatHolder } from '@/lib/utils';
 import { Transaction } from '@/lib/types';
+import { isLoanTransaction } from '@/lib/salaryCycle';
 import ExpenseChart, { CategoryExpenseItem } from '@/components/ExpenseChart';
 
 export const revalidate = 0; // Real-time dashboard
@@ -58,17 +59,17 @@ export default async function Home() {
   const thisMonthTrxs = trxs.filter((t) => t.trx_date && t.trx_date.startsWith(currentYearMonth));
 
   const totalIncomeThisMonth = thisMonthTrxs
-    .filter((t) => t.type === 'income')
+    .filter((t) => t.type === 'income' && !isLoanTransaction(t))
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const totalExpenseThisMonth = thisMonthTrxs
-    .filter((t) => t.type === 'expense')
+    .filter((t) => t.type === 'expense' && !isLoanTransaction(t))
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
-  // Group current month expenses by category for chart
+  // Group current month living expenses by category for chart (excluding loan disbursements)
   const categoryExpenseMap: Record<string, number> = {};
   thisMonthTrxs
-    .filter((t) => t.type === 'expense')
+    .filter((t) => t.type === 'expense' && !isLoanTransaction(t))
     .forEach((t) => {
       const catName = t.categories?.name || 'Lainnya';
       categoryExpenseMap[catName] = (categoryExpenseMap[catName] || 0) + Number(t.amount);
