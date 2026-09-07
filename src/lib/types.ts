@@ -64,3 +64,39 @@ export interface SalaryCycleStats {
   daysElapsed: number;
 }
 
+export type LoanType = 'receivable' | 'payable';
+export type LoanStatus = 'unpaid' | 'partially_paid' | 'paid';
+
+export interface Loan {
+  id: string;
+  type: LoanType;
+  person_name: string;
+  total_amount: number;
+  paid_amount: number;
+  holder: LegacyHolderAccount;
+  payment_method_id?: string | null;
+  loan_date: string;
+  due_date?: string | null;
+  description?: string | null;
+  status: LoanStatus;
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string | null;
+  payment_methods?: { name: string } | null;
+  loan_payments?: LoanPayment[];
+}
+
+export interface LoanPayment {
+  id: string;
+  loan_id: string;
+  amount: number;
+  payment_date: string;
+  holder: LegacyHolderAccount;
+  payment_method_id?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  deleted_at?: string | null;
+  payment_methods?: { name: string } | null;
+}
+
+

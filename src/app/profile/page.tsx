@@ -12,6 +12,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  HandCoins,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import InstallButton from '@/components/InstallButton';
@@ -109,6 +110,18 @@ export default function Profile() {
               <CreditCard size={18} />
             </div>
             <span>Kelola Metode Pembayaran</span>
+          </div>
+        </Link>
+
+        <Link
+          href="/loans"
+          className="w-full flex items-center justify-between p-4 rounded-2xl bg-surface border border-foreground/10 dark:border-white/5 active:bg-surface-light transition-colors"
+        >
+          <div className="flex items-center gap-3 text-sm font-medium">
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500">
+              <HandCoins size={18} />
+            </div>
+            <span>Catatan Hutang & Piutang</span>
           </div>
         </Link>
       </div>

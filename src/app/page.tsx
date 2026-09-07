@@ -9,6 +9,7 @@ import {
   ChevronRight,
   TrendingDown,
   TrendingUp,
+  HandCoins,
 } from 'lucide-react';
 import { getServiceRoleClient } from '@/lib/supabase';
 import { formatIDR, formatHolder } from '@/lib/utils';
@@ -27,6 +28,21 @@ export default async function Home() {
     .is('deleted_at', null)
     .order('trx_date', { ascending: false })
     .order('created_at', { ascending: false });
+
+  // Fetch active unsettled loans
+  const { data: activeLoans } = await supabase
+    .from('loans')
+    .select('*')
+    .is('deleted_at', null)
+    .neq('status', 'paid');
+
+  const totalReceivableUnpaid = (activeLoans || [])
+    .filter((l: any) => l.type === 'receivable')
+    .reduce((sum: number, l: any) => sum + Math.max(0, Number(l.total_amount) - Number(l.paid_amount)), 0);
+
+  const receivableCount = (activeLoans || []).filter(
+    (l: any) => l.type === 'receivable' && Number(l.total_amount) > Number(l.paid_amount)
+  ).length;
 
   const trxs: Transaction[] = (transactions as Transaction[]) || [];
 
@@ -160,6 +176,31 @@ export default async function Home() {
           );
         })}
       </section>
+
+      {/* Active Receivables / Loans Banner */}
+      {totalReceivableUnpaid > 0 && (
+        <Link
+          href="/loans"
+          className="glass-panel p-3.5 rounded-2xl mb-6 flex items-center justify-between border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-surface to-surface hover:border-amber-500/40 transition-all group"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
+              <HandCoins size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Piutang Belum Tertagih
+              </p>
+              <p className="text-xs font-black text-foreground truncate mt-0.5">
+                {formatIDR(totalReceivableUnpaid)} • {receivableCount} Orang
+              </p>
+            </div>
+          </div>
+          <span className="text-xs text-primary font-bold flex items-center gap-0.5 shrink-0 ml-2">
+            Lihat <ChevronRight size={14} />
+          </span>
+        </Link>
+      )}
 
       {/* Expense Donut Chart Section */}
       <ExpenseChart
