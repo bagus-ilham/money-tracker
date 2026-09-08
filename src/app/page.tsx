@@ -13,6 +13,8 @@ import {
   Target,
   AlertTriangle,
   PiggyBank,
+  Scale,
+  FileText,
 } from 'lucide-react';
 import { getServiceRoleClient } from '@/lib/supabase';
 import { formatIDR, formatHolder } from '@/lib/utils';
@@ -162,10 +164,10 @@ export default async function Home() {
   const activeGoalsCount = (savingGoalsData || []).length;
 
   const accounts = [
-    { title: 'Cash Suami', amount: cashSuami, bgTint: 'bg-blue-500/10', icon: Banknote, iconColor: 'text-blue-500' },
-    { title: 'ATM Suami', amount: atmSuami, bgTint: 'bg-indigo-500/10', icon: CreditCard, iconColor: 'text-indigo-500' },
-    { title: 'Cash Istri', amount: cashIstri, bgTint: 'bg-pink-500/10', icon: Banknote, iconColor: 'text-pink-500' },
-    { title: 'ATM Istri', amount: atmIstri, bgTint: 'bg-purple-500/10', icon: CreditCard, iconColor: 'text-purple-500' },
+    { key: 'cash_suami', title: 'Cash Suami', amount: cashSuami, bgTint: 'bg-emerald-500/10', icon: Banknote, iconColor: 'text-emerald-500' },
+    { key: 'atm_suami', title: 'ATM Suami', amount: atmSuami, bgTint: 'bg-blue-500/10', icon: CreditCard, iconColor: 'text-blue-500' },
+    { key: 'cash_istri', title: 'Cash Istri', amount: cashIstri, bgTint: 'bg-pink-500/10', icon: Banknote, iconColor: 'text-pink-500' },
+    { key: 'atm_istri', title: 'ATM Istri', amount: atmIstri, bgTint: 'bg-purple-500/10', icon: CreditCard, iconColor: 'text-purple-500' },
   ];
 
   const recentTransactions = trxs.slice(0, 8);
@@ -194,8 +196,17 @@ export default async function Home() {
             </div>
           )}
         </div>
-        <div className="bg-surface-light p-3 rounded-2xl border border-foreground/10 dark:border-white/10 shadow-sm">
-          <Wallet className="w-6 h-6 text-primary" />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/reports"
+            className="p-2.5 rounded-2xl bg-surface-light border border-foreground/10 dark:border-white/10 text-text-muted hover:text-primary transition-colors flex items-center shadow-sm"
+            title="Laporan & Evaluasi Keuangan"
+          >
+            <FileText className="w-5 h-5" />
+          </Link>
+          <div className="bg-surface-light p-2.5 rounded-2xl border border-foreground/10 dark:border-white/10 shadow-sm">
+            <Wallet className="w-5 h-5 text-primary" />
+          </div>
         </div>
       </header>
 
@@ -226,25 +237,60 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Cash & ATM per Holder Cards (4 accounts) */}
-      <section className="grid grid-cols-2 gap-3.5 mb-6">
-        {accounts.map((acc) => {
-          const Icon = acc.icon;
-          return (
-            <div key={acc.title} className="glass-panel p-4 rounded-2xl relative overflow-hidden group">
-              <div
-                className={`absolute top-0 right-0 w-16 h-16 ${acc.bgTint} rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110`}
-              />
-              <div className="flex items-center gap-2 mb-2 relative z-10">
-                <div className={`p-1.5 rounded-lg ${acc.bgTint}`}>
-                  <Icon size={16} className={acc.iconColor} />
+      {/* Cash & ATM per Holder Section with Navigation & Quick Actions */}
+      <section className="mb-6">
+        <div className="flex items-center justify-between mb-2.5 px-0.5">
+          <div className="flex items-center gap-1.5">
+            <Wallet size={15} className="text-primary" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Dompet & Rekening</h2>
+          </div>
+          <Link
+            href="/accounts"
+            className="text-xs text-primary font-bold flex items-center gap-0.5 hover:underline group"
+          >
+            Kelola & Rekonsiliasi <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3.5 mb-2.5">
+          {accounts.map((acc) => {
+            const Icon = acc.icon;
+            return (
+              <Link
+                key={acc.title}
+                href={`/accounts?account=${acc.key}`}
+                className="glass-panel p-4 rounded-2xl relative overflow-hidden group hover:border-primary/40 transition-all block"
+              >
+                <div
+                  className={`absolute top-0 right-0 w-16 h-16 ${acc.bgTint} rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110`}
+                />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <div className={`p-1.5 rounded-lg ${acc.bgTint}`}>
+                    <Icon size={16} className={acc.iconColor} />
+                  </div>
+                  <span className="text-xs font-medium text-text-muted">{acc.title}</span>
                 </div>
-                <span className="text-xs font-medium text-text-muted">{acc.title}</span>
-              </div>
-              <p className="text-base font-bold text-foreground relative z-10">{formatIDR(acc.amount)}</p>
-            </div>
-          );
-        })}
+                <p className="text-base font-bold text-foreground relative z-10">{formatIDR(acc.amount)}</p>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Quick Action Bar */}
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            href="/accounts?action=transfer"
+            className="p-2.5 rounded-xl bg-surface hover:bg-surface-light border border-foreground/10 dark:border-white/10 flex items-center justify-center gap-1.5 text-xs font-bold text-foreground transition-all active:scale-98"
+          >
+            <ArrowRightLeft size={14} className="text-primary" /> Pindah Saldo
+          </Link>
+          <Link
+            href="/accounts?action=reconcile"
+            className="p-2.5 rounded-xl bg-surface hover:bg-surface-light border border-foreground/10 dark:border-white/10 flex items-center justify-center gap-1.5 text-xs font-bold text-foreground transition-all active:scale-98"
+          >
+            <Scale size={14} className="text-amber-500" /> Rekonsiliasi (Opname)
+          </Link>
+        </div>
       </section>
 
       {/* Active Receivables / Loans Banner */}
@@ -299,6 +345,29 @@ export default async function Home() {
                   ? `terkumpul • ${activeGoalsCount} celengan`
                   : 'Mulai rencanakan tabungan impian'}
               </span>
+            </p>
+          </div>
+        </div>
+        <span className="text-xs text-primary font-bold flex items-center gap-0.5 shrink-0 ml-2 group-hover:translate-x-0.5 transition-transform">
+          Buka <ChevronRight size={14} />
+        </span>
+      </Link>
+
+      {/* Laporan & Evaluasi Bulanan Banner */}
+      <Link
+        href="/reports"
+        className="glass-panel p-3.5 rounded-2xl mb-4 flex items-center justify-between border-sky-500/20 bg-gradient-to-r from-sky-500/10 via-surface to-surface hover:border-sky-500/40 transition-all group"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 shrink-0 group-hover:scale-105 transition-transform">
+            <FileText size={18} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+              Laporan & Evaluasi Bulanan
+            </p>
+            <p className="text-xs font-black text-foreground truncate mt-0.5">
+              Cetak PDF • Ringkasan WhatsApp • Ekspor CSV
             </p>
           </div>
         </div>

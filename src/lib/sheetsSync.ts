@@ -107,6 +107,9 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
     let savingsSheet = sheetList.find((s) => s.properties?.title === 'Target Tabungan');
     let savingsSheetId = savingsSheet?.properties?.sheetId;
 
+    let transferSheet = sheetList.find((s) => s.properties?.title === 'Transfer & Mutasi Akun');
+    let transferSheetId = transferSheet?.properties?.sheetId;
+
     const addSheetRequests: any[] = [];
     if (!ringkasanSheet) {
       addSheetRequests.push({ addSheet: { properties: { title: 'Ringkasan' } } });
@@ -116,6 +119,9 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
     }
     if (!savingsSheet) {
       addSheetRequests.push({ addSheet: { properties: { title: 'Target Tabungan' } } });
+    }
+    if (!transferSheet) {
+      addSheetRequests.push({ addSheet: { properties: { title: 'Transfer & Mutasi Akun' } } });
     }
 
     if (addSheetRequests.length > 0) {
@@ -129,6 +135,7 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
         if (title === 'Ringkasan') ringkasanSheetId = id;
         if (title === 'Hutang & Piutang') loansSheetId = id;
         if (title === 'Target Tabungan') savingsSheetId = id;
+        if (title === 'Transfer & Mutasi Akun') transferSheetId = id;
       });
     }
 
@@ -283,6 +290,43 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
       0
     );
 
+    // Per-Account flow breakdown (Inflow, Outflow, Transfer In, Transfer Out, End Balance)
+    const getAccountFlow = (key: string, legacyKey?: string) => {
+      let income = 0;
+      let expense = 0;
+      let transferIn = 0;
+      let transferOut = 0;
+
+      (trxs || []).forEach((t: any) => {
+        const isHolder = t.holder === key || (legacyKey && t.holder === legacyKey);
+        const isFromHolder = t.from_holder === key || (legacyKey && t.from_holder === legacyKey);
+
+        if (t.type === 'income' && isHolder) {
+          income += Number(t.amount);
+        } else if (t.type === 'expense' && isHolder) {
+          expense += Number(t.amount);
+        } else if (t.type === 'transfer') {
+          if (isFromHolder) transferOut += Number(t.amount);
+          if (isHolder) transferIn += Number(t.amount);
+        }
+      });
+
+      const finalBalance = income - expense + transferIn - transferOut;
+      return { income, expense, transferIn, transferOut, finalBalance };
+    };
+
+    const flowCashSuami = getAccountFlow('cash_suami', 'suami');
+    const flowAtmSuami = getAccountFlow('atm_suami');
+    const flowCashIstri = getAccountFlow('cash_istri', 'istri');
+    const flowAtmIstri = getAccountFlow('atm_istri');
+
+    // Reconciliation transactions
+    const reconciliationTrxs = (trxs || []).filter(
+      (t: any) =>
+        t.categories?.name === 'Penyesuaian Saldo' ||
+        (t.description && t.description.startsWith('[Rekonsiliasi Saldo]'))
+    );
+
     const summaryValues: (string | number)[][] = [
       ['RINGKASAN SALDO DOMPET & REKENING', ''],
       ['Akun / Pemegang', 'Saldo Riil (Rp)'],
@@ -293,6 +337,56 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
       ['TOTAL SALDO TERSEDIA', totalSaldo],
       ['DANA TERKUNCI TABUNGAN (CELENGAN)', totalSavingsLocked],
       ['SALDO BEBAS BELANJA (SAFE TO SPEND)', totalSaldo - totalSavingsLocked],
+      ['', ''],
+      ['RINCIAN ARUS & POSISI SALDO PER DOMPET / REKENING', '', '', '', '', ''],
+      [
+        'Akun / Pemegang',
+        'Pemasukan (Rp)',
+        'Pengeluaran (Rp)',
+        'Transfer Masuk (Rp)',
+        'Transfer Keluar (Rp)',
+        'Saldo Akhir Riil (Rp)',
+      ],
+      [
+        'Cash Suami (Dompet Tunai)',
+        flowCashSuami.income,
+        flowCashSuami.expense,
+        flowCashSuami.transferIn,
+        flowCashSuami.transferOut,
+        flowCashSuami.finalBalance,
+      ],
+      [
+        'ATM Suami (Rekening Bank)',
+        flowAtmSuami.income,
+        flowAtmSuami.expense,
+        flowAtmSuami.transferIn,
+        flowAtmSuami.transferOut,
+        flowAtmSuami.finalBalance,
+      ],
+      [
+        'Cash Istri (Dompet Tunai)',
+        flowCashIstri.income,
+        flowCashIstri.expense,
+        flowCashIstri.transferIn,
+        flowCashIstri.transferOut,
+        flowCashIstri.finalBalance,
+      ],
+      [
+        'ATM Istri (Rekening Bank)',
+        flowAtmIstri.income,
+        flowAtmIstri.expense,
+        flowAtmIstri.transferIn,
+        flowAtmIstri.transferOut,
+        flowAtmIstri.finalBalance,
+      ],
+      [
+        'TOTAL GABUNGAN RUMAH TANGGA',
+        flowCashSuami.income + flowAtmSuami.income + flowCashIstri.income + flowAtmIstri.income,
+        flowCashSuami.expense + flowAtmSuami.expense + flowCashIstri.expense + flowAtmIstri.expense,
+        flowCashSuami.transferIn + flowAtmSuami.transferIn + flowCashIstri.transferIn + flowAtmIstri.transferIn,
+        flowCashSuami.transferOut + flowAtmSuami.transferOut + flowCashIstri.transferOut + flowAtmIstri.transferOut,
+        totalSaldo,
+      ],
       ['', ''],
       ['STATUS HUTANG & PIUTANG', ''],
       ['Keterangan', 'Nominal (Rp)'],
@@ -319,9 +413,24 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
         ]),
     ];
 
+    if (reconciliationTrxs.length > 0) {
+      summaryValues.push(
+        ['', ''],
+        ['LOG RIWAYAT REKONSILIASI & OPNAME SALDO', '', '', '', ''],
+        ['Tanggal', 'Waktu (WIB)', 'Akun', 'Penyesuaian (Rp)', 'Keterangan Rekonsiliasi'],
+        ...reconciliationTrxs.map((r: any) => [
+          r.trx_date,
+          toWibDateTime(r.created_at),
+          formatHolder(r.holder),
+          r.type === 'income' ? Number(r.amount) : -Number(r.amount),
+          r.description || '-',
+        ])
+      );
+    }
+
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: 'Ringkasan!A1:Z1000',
+      range: 'Ringkasan!A1:Z1500',
     });
 
     await sheets.spreadsheets.values.update({
@@ -546,7 +655,66 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
     });
 
     // ==========================================
-    // 7. Batch Format Requests (Styles, Colors, Column Resizing)
+    // 7. Prepare Transfer & Mutations Data ('Transfer & Mutasi Akun')
+    // ==========================================
+    const transferTrxs = (trxs || []).filter((t: any) => t.type === 'transfer');
+    const totalTransferAmount = transferTrxs.reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
+
+    const transferRows: (string | number)[][] = [
+      ['LOG MUTASI & TRANSFER INTERNAL ANTAR AKUN', '', '', '', '', '', '', ''],
+      ['Terakhir Disinkronkan (WIB): ' + toWibDateTime(new Date().toISOString()), '', '', '', '', '', '', ''],
+      [
+        'No',
+        'Tanggal Transaksi',
+        'Waktu Input (WIB)',
+        'Dari Akun (Pengirim)',
+        'Ke Akun (Penerima)',
+        'Nominal Transfer (Rp)',
+        'Metode Bayar',
+        'Catatan / Keterangan',
+      ],
+    ];
+
+    transferTrxs.forEach((t: any, idx: number) => {
+      transferRows.push([
+        idx + 1,
+        t.trx_date,
+        toWibDateTime(t.created_at),
+        formatHolder(t.from_holder),
+        formatHolder(t.holder),
+        Number(t.amount),
+        t.payment_methods?.name || '-',
+        t.description || '-',
+      ]);
+    });
+
+    if (transferTrxs.length > 0) {
+      transferRows.push([
+        'TOTAL',
+        '',
+        '',
+        '',
+        '',
+        totalTransferAmount,
+        '',
+        '',
+      ]);
+    }
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: "'Transfer & Mutasi Akun'!A1:Z2000",
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "'Transfer & Mutasi Akun'!A1",
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: transferRows },
+    });
+
+    // ==========================================
+    // 8. Batch Format Requests (Styles, Colors, Column Resizing)
     // ==========================================
     const formatRequests: any[] = [
       // Freeze Header Row in Sheet1
@@ -804,6 +972,63 @@ export async function resyncGoogleSheets(): Promise<{ success: boolean; count: n
               dimension: 'COLUMNS',
               startIndex: 0,
               endIndex: 11,
+            },
+          },
+        }
+      );
+    }
+
+    // Format Transfer & Mutasi Akun sheet if ID is available
+    if (transferSheetId !== undefined) {
+      formatRequests.push(
+        // Header Table Transfer (Deep cyan/navy background)
+        {
+          repeatCell: {
+            range: {
+              sheetId: transferSheetId,
+              startRowIndex: 2,
+              endRowIndex: 3,
+              startColumnIndex: 0,
+              endColumnIndex: 8,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.12, green: 0.45, blue: 0.68 },
+                textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 }, fontSize: 10 },
+                horizontalAlignment: 'CENTER',
+                verticalAlignment: 'MIDDLE',
+              },
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)',
+          },
+        },
+        // Currency formatting for Nominal Transfer (Column F -> idx 5)
+        {
+          repeatCell: {
+            range: {
+              sheetId: transferSheetId,
+              startRowIndex: 3,
+              endRowIndex: Math.max(transferTrxs.length + 5, 20),
+              startColumnIndex: 5,
+              endColumnIndex: 6,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: { type: 'NUMBER', pattern: '#,##0' },
+                horizontalAlignment: 'RIGHT',
+              },
+            },
+            fields: 'userEnteredFormat(numberFormat,horizontalAlignment)',
+          },
+        },
+        // Auto resize columns in Transfer & Mutasi Akun
+        {
+          autoResizeDimensions: {
+            dimensions: {
+              sheetId: transferSheetId,
+              dimension: 'COLUMNS',
+              startIndex: 0,
+              endIndex: 8,
             },
           },
         }

@@ -5,7 +5,7 @@ import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { addTransaction } from '@/app/actions';
+import { addTransaction, transferFunds } from '@/app/actions';
 import { useToast } from '@/components/Toast';
 import CurrencyInput from '@/components/CurrencyInput';
 import { HOLDER_OPTIONS } from '@/lib/utils';
@@ -27,6 +27,7 @@ export default function AddTransaction() {
   const [categoryId, setCategoryId] = useState('');
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [description, setDescription] = useState('');
+  const [adminFee, setAdminFee] = useState<number>(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -76,16 +77,26 @@ export default function AddTransaction() {
     }
 
     setIsSubmitting(true);
-    const result = await addTransaction({
-      type,
-      amount: Number(amount),
-      holder,
-      from_holder: type === 'transfer' ? fromHolder : undefined,
-      category_id: type !== 'transfer' ? categoryId || undefined : undefined,
-      payment_method_id: paymentMethodId || undefined,
-      trx_date: date,
-      description: description.trim() || undefined,
-    });
+    const result =
+      type === 'transfer'
+        ? await transferFunds({
+            from_holder: fromHolder,
+            to_holder: holder,
+            amount: Number(amount),
+            trx_date: date,
+            payment_method_id: paymentMethodId || undefined,
+            admin_fee: Number(adminFee) || 0,
+            description: description.trim() || undefined,
+          })
+        : await addTransaction({
+            type,
+            amount: Number(amount),
+            holder,
+            category_id: categoryId || undefined,
+            payment_method_id: paymentMethodId || undefined,
+            trx_date: date,
+            description: description.trim() || undefined,
+          });
 
     setIsSubmitting(false);
     if (result.success) {
@@ -143,6 +154,50 @@ export default function AddTransaction() {
             Transfer
           </button>
         </div>
+
+        {/* Transfer Presets (Only when Transfer is active) */}
+        {type === 'transfer' && (
+          <div className="mb-5 p-3 rounded-2xl bg-surface border border-foreground/10 dark:border-white/5 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+              Pilihan Cepat Transfer:
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setFromHolder('atm_suami');
+                  setHolder('cash_suami');
+                  setDescription('Tarik Tunai ATM ke Dompet');
+                }}
+                className="p-2 rounded-xl bg-surface-light hover:border-primary/40 border border-foreground/5 text-center text-xs font-semibold active:scale-95 transition-all"
+              >
+                🏧 Tarik Tunai
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFromHolder('atm_suami');
+                  setHolder('cash_istri');
+                  setDescription('Jatah Belanja Istri');
+                }}
+                className="p-2 rounded-xl bg-surface-light hover:border-primary/40 border border-foreground/5 text-center text-xs font-semibold active:scale-95 transition-all"
+              >
+                🎁 Jatah Belanja
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFromHolder('cash_suami');
+                  setHolder('atm_suami');
+                  setDescription('Setor Tunai ke ATM');
+                }}
+                className="p-2 rounded-xl bg-surface-light hover:border-primary/40 border border-foreground/5 text-center text-xs font-semibold active:scale-95 transition-all"
+              >
+                💳 Setor Tunai
+              </button>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Amount using CurrencyInput */}
@@ -248,6 +303,49 @@ export default function AddTransaction() {
               ))}
             </select>
           </div>
+
+          {/* Biaya Admin for Transfer */}
+          {type === 'transfer' && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className="text-xs font-medium text-text-muted">Biaya Admin (Opsional)</label>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setAdminFee(0)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      adminFee === 0 ? 'bg-primary text-white font-bold' : 'bg-surface-light text-text-muted'
+                    }`}
+                  >
+                    Rp 0
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminFee(2500)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      adminFee === 2500 ? 'bg-primary text-white font-bold' : 'bg-surface-light text-text-muted'
+                    }`}
+                  >
+                    Rp 2.500
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminFee(6500)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      adminFee === 6500 ? 'bg-primary text-white font-bold' : 'bg-surface-light text-text-muted'
+                    }`}
+                  >
+                    Rp 6.500
+                  </button>
+                </div>
+              </div>
+              <CurrencyInput
+                value={adminFee}
+                onChange={(val) => setAdminFee(val)}
+                placeholder="0"
+              />
+            </div>
+          )}
 
           {/* Description */}
           <div>

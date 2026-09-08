@@ -2,6 +2,7 @@
 
 import { getServiceRoleClient } from '@/lib/supabase';
 import { resyncGoogleSheets } from '@/lib/sheetsSync';
+import { formatIDR, formatHolder } from '@/lib/utils';
 import { revalidatePath } from 'next/cache';
 
 export async function addCategory(name: string, type: 'income' | 'expense', monthly_budget: number = 0) {
@@ -819,6 +820,162 @@ export async function deleteSavingGoalLog(logId: string, goalId: string) {
   resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
 
   return { success: true };
+}
+
+// ==================== ACCOUNT TRANSFER & RECONCILIATION ACTIONS ====================
+
+export async function transferFunds(payload: {
+  from_holder: 'cash_suami' | 'atm_suami' | 'cash_istri' | 'atm_istri' | 'suami' | 'istri';
+  to_holder: 'cash_suami' | 'atm_suami' | 'cash_istri' | 'atm_istri' | 'suami' | 'istri';
+  amount: number;
+  trx_date: string;
+  payment_method_id?: string | null;
+  admin_fee?: number;
+  description?: string;
+}) {
+  if (payload.from_holder === payload.to_holder) {
+    return { success: false, error: 'Akun pengirim dan penerima tidak boleh sama' };
+  }
+  if (!payload.amount || Number(payload.amount) <= 0) {
+    return { success: false, error: 'Nominal transfer harus lebih dari 0' };
+  }
+
+  const supabase = getServiceRoleClient();
+  const transferDesc =
+    payload.description?.trim() ||
+    `Transfer: ${formatHolder(payload.from_holder)} → ${formatHolder(payload.to_holder)}`;
+
+  // 1. Insert transfer record
+  const { data: transferTrx, error: transferErr } = await supabase
+    .from('transactions')
+    .insert([
+      {
+        type: 'transfer',
+        amount: Number(payload.amount),
+        from_holder: payload.from_holder,
+        holder: payload.to_holder,
+        payment_method_id: payload.payment_method_id || null,
+        trx_date: payload.trx_date,
+        description: transferDesc,
+      },
+    ])
+    .select()
+    .single();
+
+  if (transferErr) {
+    console.error('Error recording transfer:', transferErr);
+    return { success: false, error: transferErr.message };
+  }
+
+  // 2. Optional admin fee as expense mutation from from_holder
+  if (payload.admin_fee && Number(payload.admin_fee) > 0) {
+    let { data: adminCat } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('name', 'Biaya Admin')
+      .eq('type', 'expense')
+      .maybeSingle();
+
+    if (!adminCat) {
+      const { data: newCat } = await supabase
+        .from('categories')
+        .insert([{ name: 'Biaya Admin', type: 'expense', monthly_budget: 0 }])
+        .select()
+        .single();
+      adminCat = newCat;
+    }
+
+    await supabase.from('transactions').insert([
+      {
+        type: 'expense',
+        amount: Number(payload.admin_fee),
+        holder: payload.from_holder,
+        payment_method_id: payload.payment_method_id || null,
+        category_id: adminCat?.id || null,
+        trx_date: payload.trx_date,
+        description: `Biaya Admin: ${transferDesc}`,
+      },
+    ]);
+  }
+
+  revalidatePath('/');
+  revalidatePath('/history');
+  revalidatePath('/accounts');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true, data: transferTrx };
+}
+
+export async function reconcileAccountBalance(payload: {
+  holder: 'cash_suami' | 'atm_suami' | 'cash_istri' | 'atm_istri' | 'suami' | 'istri';
+  actual_balance: number;
+  current_recorded_balance: number;
+  reason: string;
+  notes?: string;
+  trx_date?: string;
+  payment_method_id?: string | null;
+}) {
+  const diff = Number(payload.actual_balance) - Number(payload.current_recorded_balance);
+  if (diff === 0) {
+    return { success: false, error: 'Saldo riil sama dengan saldo tercatat (tidak ada selisih).' };
+  }
+
+  const supabase = getServiceRoleClient();
+  const trxDate = payload.trx_date || new Date().toISOString().split('T')[0];
+  const type = diff < 0 ? 'expense' : 'income';
+  const amount = Math.abs(diff);
+
+  // Find or create category 'Penyesuaian Saldo'
+  let { data: cat } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('name', 'Penyesuaian Saldo')
+    .eq('type', type)
+    .maybeSingle();
+
+  if (!cat) {
+    const { data: newCat } = await supabase
+      .from('categories')
+      .insert([{ name: 'Penyesuaian Saldo', type, monthly_budget: 0 }])
+      .select()
+      .single();
+    cat = newCat;
+  }
+
+  const formattedOld = formatIDR(payload.current_recorded_balance);
+  const formattedNew = formatIDR(payload.actual_balance);
+  const noteSuffix = payload.notes?.trim() ? ` • ${payload.notes.trim()}` : '';
+  const description = `[Rekonsiliasi Saldo] ${payload.reason}${noteSuffix} (${formattedOld} → ${formattedNew})`;
+
+  const { data: trx, error } = await supabase
+    .from('transactions')
+    .insert([
+      {
+        type,
+        amount,
+        holder: payload.holder,
+        category_id: cat?.id || null,
+        payment_method_id: payload.payment_method_id || null,
+        trx_date: trxDate,
+        description,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error reconciling balance:', error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/');
+  revalidatePath('/history');
+  revalidatePath('/accounts');
+  revalidatePath('/profile');
+  resyncGoogleSheets().catch((err) => console.error('Auto-sync sheets error:', err));
+
+  return { success: true, data: trx };
 }
 
 

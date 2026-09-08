@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -16,6 +17,7 @@ import {
   Tag,
   TrendingDown,
   TrendingUp,
+  FileText,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { deleteTransaction, updateTransaction } from '@/app/actions';
@@ -273,18 +275,28 @@ export default function History() {
             {` • ${filteredTransactions.length} Transaksi`}
           </p>
         </div>
-        <button
-          onClick={() => setShowFilterModal(true)}
-          className={`p-2.5 rounded-2xl border transition-all flex items-center gap-1.5 text-xs font-semibold ${
-            dateFilter.preset !== 'all'
-              ? 'bg-primary/20 border-primary text-primary shadow-sm'
-              : 'bg-surface-light border-foreground/10 dark:border-white/10 text-text-muted hover:text-foreground'
-          }`}
-          title="Filter Rentang Waktu / Siklus Gajian"
-        >
-          <Calendar size={16} />
-          <span className="hidden sm:inline">Periode</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <Link
+            href="/reports"
+            className="p-2 rounded-xl border border-foreground/10 dark:border-white/10 bg-surface-light text-text-muted hover:text-primary transition-colors flex items-center gap-1 text-xs font-semibold"
+            title="Laporan & Evaluasi Bulanan"
+          >
+            <FileText size={16} />
+            <span className="hidden sm:inline">Laporan</span>
+          </Link>
+          <button
+            onClick={() => setShowFilterModal(true)}
+            className={`p-2 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-all ${
+              dateFilter.preset !== 'all'
+                ? 'bg-primary/20 border-primary text-primary shadow-sm'
+                : 'bg-surface-light border-foreground/10 dark:border-white/10 text-text-muted hover:text-foreground'
+            }`}
+            title="Filter Rentang Waktu / Siklus Gajian"
+          >
+            <Calendar size={16} />
+            <span className="hidden sm:inline">Periode</span>
+          </button>
+        </div>
       </header>
 
       {/* Search Bar */}
@@ -506,18 +518,41 @@ export default function History() {
               </div>
 
               <div className="text-right shrink-0 ml-3">
-                <p
-                  className={`font-bold text-sm ${
+                {(() => {
+                  let sign = trx.type === 'income' ? '+' : trx.type === 'expense' ? '-' : '';
+                  let colorClass =
                     trx.type === 'income'
                       ? 'text-income'
                       : trx.type === 'expense'
                       ? 'text-foreground'
-                      : 'text-transfer'
-                  }`}
-                >
-                  {trx.type === 'income' ? '+' : trx.type === 'expense' ? '-' : ''}
-                  {formatIDR(trx.amount)}
-                </p>
+                      : 'text-transfer';
+
+                  if (trx.type === 'transfer' && holderFilter !== 'all') {
+                    const matchFrom =
+                      trx.from_holder === holderFilter ||
+                      (holderFilter === 'cash_suami' && trx.from_holder === 'suami') ||
+                      (holderFilter === 'cash_istri' && trx.from_holder === 'istri');
+                    const matchTo =
+                      trx.holder === holderFilter ||
+                      (holderFilter === 'cash_suami' && trx.holder === 'suami') ||
+                      (holderFilter === 'cash_istri' && trx.holder === 'istri');
+
+                    if (matchFrom) {
+                      sign = '-';
+                      colorClass = 'text-foreground';
+                    } else if (matchTo) {
+                      sign = '+';
+                      colorClass = 'text-income';
+                    }
+                  }
+
+                  return (
+                    <p className={`font-bold text-sm ${colorClass}`}>
+                      {sign}
+                      {formatIDR(trx.amount)}
+                    </p>
+                  );
+                })()}
                 <p className="text-[10px] text-text-muted mt-0.5 uppercase tracking-wider font-medium">
                   {trx.type === 'transfer'
                     ? `${formatHolder(trx.from_holder)} → ${formatHolder(trx.holder)}`
